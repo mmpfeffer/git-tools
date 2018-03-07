@@ -33,7 +33,7 @@ git-sync
 Credentials and target repos for remotes must be pre-configured.
 
 ### LIMITATIONS:
-- Local git repos in subdirectories of DIR must be named with .git suffix (e.g. myrepo.git)
+- Local git repos in subdirectories of DIR must be named with .git suffix (e.g. myrepo.git).
 - If the result of 'git clone' results in a directory named differently, change the directory
 name to end with git.
 - Git submodules the submodules must be mirrored independently.
