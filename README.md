@@ -1,4 +1,4 @@
-# Git-Sync: Simple mirroring between two (or more) git remotes.
+# Git-Sync: Effective mirroring between git remotes.
 
 ## Synopsis
 ```
