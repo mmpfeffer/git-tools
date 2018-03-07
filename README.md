@@ -30,7 +30,7 @@ git-sync
 ```
 
 ### REQUIREMENTS:
-Credentials and target repos for 'origin' and 'mirror' remotes must be configured.
+Credentials and target repos for remotes must be pre-configured.
 
 ### LIMITATIONS:
 Local git repos in subdirectories of DIR must be named with .git suffix (e.g. myrepo.git)
