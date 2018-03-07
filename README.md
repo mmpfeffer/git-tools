@@ -10,7 +10,7 @@ DIR: directory holding git repo(s) to sync. Default is current directory.
 ```
 
 ## Introduction
-Find local git mirrors and sync their origin to a mirror.
+Sync between git remotes.
 
 ### ENVIRONMENT
 SOURCE_REMOTE and DEST_REMOTE can be given via env. -s and -d take precedence.
