@@ -2,7 +2,7 @@
 
 ## Synopsis
 ```
-git-sync DIR [-s SOURCE_REMOTE] [-d DEST_REMOTE]
+git sync DIR [-s SOURCE_REMOTE] [-d DEST_REMOTE]
 
 DIR: directory holding git repo(s) to sync. Default is current directory.
 -s SOURCE_REMOTE: remote to sync from. default to 'origin'
