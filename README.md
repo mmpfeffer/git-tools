@@ -1,10 +1,12 @@
 # Git-Sync: Simple mirroring between two (or more) git remotes.
 
 ## Synopsis
-`git-sync DIR [-s SOURCE_REMOTE] [-d DEST_REMOTE]`
-`DIR: directory holding git repo(s) to sync. Default is current directory.`
-`-s SOURCE_REMOTE: remote to sync from. default to 'origin'`
-`§-d DEST_REMOTE: remote to sync to. defaults to 'mirror'`
+```
+git-sync DIR [-s SOURCE_REMOTE] [-d DEST_REMOTE]
+DIR: directory holding git repo(s) to sync. Default is current directory.
+-s SOURCE_REMOTE: remote to sync from. default to 'origin'
+§-d DEST_REMOTE: remote to sync to. defaults to 'mirror'
+```
 
 ## Introduction
 Find local git mirrors and sync their origin to a mirror.
@@ -15,11 +17,11 @@ Find local git mirrors and sync their origin to a mirror.
 ### SETUP
     Underneath the DIR clone and configure any number of folders and repos
     e.g.
-`
+```
         cd ./somefolder/anotherfolder
         git clone --mirror <SOURCE_REPO_URL>
         git remote add 'mirror' <DEST_REPO_URL>
-`
+```
 
 ### REQUIREMENTS:
     Credentials for 'origin' and 'mirror' remotes must be configured.
