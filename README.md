@@ -3,9 +3,10 @@
 ## Synopsis
 ```
 git-sync DIR [-s SOURCE_REMOTE] [-d DEST_REMOTE]
+
 DIR: directory holding git repo(s) to sync. Default is current directory.
 -s SOURCE_REMOTE: remote to sync from. default to 'origin'
-§-d DEST_REMOTE: remote to sync to. defaults to 'mirror'
+-d DEST_REMOTE: remote to sync to. defaults to 'mirror'
 ```
 
 ## Introduction
@@ -15,19 +16,24 @@ Find local git mirrors and sync their origin to a mirror.
 SOURCE_REMOTE and DEST_REMOTE can be given via env. -s and -d take precedence.
 
 ### SETUP
-Underneath the DIR clone and configure any number of folders and repos
-e.g.
+Choose a directory, clone and configure any number of folders and repos. For example:
 ```
-        cd ./somefolder/anotherfolder
-        git clone --mirror <SOURCE_REPO_URL>
-        git remote add 'mirror' <DEST_REPO_URL>
+mkdir /opt/mirrors/{project1,project2}
+cd /opt/mirrors/project1
+git clone --mirror <PROJECT1_REPO_URL>
+git remote add 'mirror' <PROJECT1_MIRROR_URL>
+cd /opt/mirror/project2
+git clone --mirror <PROJECT2_REPO_URL>
+git remote add 'mirror' <PROJECT2_MIRROR_URL>
+cd /opt/mirrors
+git-sync
 ```
 
 ### REQUIREMENTS:
-Credentials for 'origin' and 'mirror' remotes must be configured.
+Credentials and target repos for 'origin' and 'mirror' remotes must be configured.
 
 ### LIMITATIONS:
-Local git repos in subdirectories of PATH must be named with .git suffix (e.g. myrepo.git)
+Local git repos in subdirectories of DIR must be named with .git suffix (e.g. myrepo.git)
 
 If the result of 'git clone' results in a directory named differently, change the directory
 name to end with git.
