@@ -3,7 +3,7 @@ usage() {
     if [[ -n "$1" ]]; then
         echo $1
     fi
-    echo usage: $(basename $0) DIR -f [-s SOURCE_REMOTE] [-d DEST_REMOTE]
+    echo usage: $(basename $0) [DIR] -f [-s SOURCE_REMOTE] [-d DEST_REMOTE]
 }
 
 help() {

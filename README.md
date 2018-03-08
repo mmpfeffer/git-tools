@@ -2,9 +2,9 @@
 
 ## Synopsis
 ```
-git sync DIR -f [-s SOURCE_REMOTE] [-d DEST_REMOTE]
+git sync [DIR] -f [-s SOURCE_REMOTE] [-d DEST_REMOTE]
 
-DIR: directory holding git repo(s) to sync. Default is current directory.
+DIR: directory holding git repo(s) to sync. Default is $GIT_DIR or current directory if not set.
 -s SOURCE_REMOTE: remote to sync from. defaults to 'origin'
 -d DEST_REMOTE: remote to sync to. defaults to 'mirror'
 -f perform sync even if local repo is not a bare repository
