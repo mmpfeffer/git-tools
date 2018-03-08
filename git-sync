@@ -3,15 +3,17 @@ usage() {
     if [[ -n "$1" ]]; then
         echo $1
     fi
-    echo $(basename $0) DIR [-s SOURCE_REMOTE] [-d DEST_REMOTE]
-    echo Sync one remote to another using a local mirror.
+    echo usage: $(basename $0) DIR -f [-s SOURCE_REMOTE] [-d DEST_REMOTE]
 }
 
 help() {
     usage
+    echo Sync one remote to another using a local mirror.
+    echo
     echo "DIR: directory holding git repo(s) to sync. Default is current directory."
-    echo "-s SOURCE_REMOTE: remote to sync from. default to 'origin'"
+    echo "-s SOURCE_REMOTE: remote to sync from. defaults to 'origin'"
     echo "-d DEST_REMOTE: remote to sync to. defaults to 'mirror'"
+    echo "-f perform sync even if local repo is not a bare repository."
     echo
     echo "ENVIRONMENT"
     echo "    SOURCE_REMOTE and DEST_REMOTE can be given via env. -s and -d take precedence."
@@ -62,11 +64,17 @@ get_parm() {
 }
 
 do_sync() {
-    local DIR=$1
-    local SOURCE_REMOTE=$2
-    local DEST_REMOTE=$3
-    echo "Syncing $DIR from '$SOURCE_REMOTE' to '$DEST_REMOTE'."
-    git --git-dir $DIR remote update $SOURCE_REMOTE && git --git-dir $DIR push --mirror $DEST_REMOTE && SYNC_COUNT=$((SYNC_COUNT+1))
+    local FORCE=$1
+    local DIR=$2
+    local SOURCE_REMOTE=$3
+    local DEST_REMOTE=$4
+    bare=$(git --git-dir $DIR config --get --bool core.bare)
+    if [[ "$FORCE" != "true" && "$bare" != "true" ]]; then
+        echo "$DIR does not appear to be a bare repo. Skipping."
+    else
+        echo "Syncing $DIR from '$SOURCE_REMOTE' to '$DEST_REMOTE'."
+        git --git-dir $DIR remote update $SOURCE_REMOTE && git --git-dir $DIR push --mirror $DEST_REMOTE && SYNC_COUNT=$((SYNC_COUNT+1))
+    fi
     return $?
 }
 
@@ -76,12 +84,14 @@ SOURCE_REMOTE=${SOURCE_REMOTE:-origin}
 DEST_REMOTE=${DEST_REMOTE:-mirror}
 
 DIR=.
+FORCE=false
 
 # process command line...
 while [[ $# -ne 0 ]]; do
     case "$1" in
         -s) SOURCE_REMOTE=$2; shift; shift;;
         -d) DEST_REMOTE=$2;   shift; shift;;
+        -f) FORCE=true; shift;;
         -h) help; exit 0;;
         -*) usage "unknown option $1"; exit 2;;
         *)  get_parm $1; shift;;
@@ -90,12 +100,12 @@ done
 
 SYNC_COUNT=0
 if (cd $DIR; git rev-parse --git-dir 2>&1 >/dev/null); then
-    do_sync $(git rev-parse --git-dir) "$SOURCE_REMOTE" "$DEST_REMOTE"
+    do_sync $FORCE $(git rev-parse --git-dir) "$SOURCE_REMOTE" "$DEST_REMOTE"
     SYNC_COUNT=1
 else
     LIST=$(find $DIR -name *.git -type d)
     for FILE in $LIST; do
-        do_sync $FILE "$SOURCE_REMOTE" "$DEST_REMOTE"
+        do_sync $FORCE $FILE "$SOURCE_REMOTE" "$DEST_REMOTE"
     done
 fi
 case $SYNC_COUNT in
