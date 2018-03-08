@@ -38,7 +38,7 @@ Credentials and target repos for remotes must be pre-configured.
 - Local git repos in subdirectories of DIR must be named with .git suffix (e.g. myrepo.git).
 - If the result of 'git clone' results in a directory named differently, change the directory
 name to end with git.
-- Git submodules the submodules must be mirrored independently.
+- Git submodules must be mirrored independently.
 
 ### INSTALLATION:
 Copy git-sync and place in /usr/local/bin as executable file.
