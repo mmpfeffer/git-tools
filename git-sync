@@ -89,8 +89,8 @@ while [[ $# -ne 0 ]]; do
 done
 
 SYNC_COUNT=0
-if (cd $DIR; git rev-parse --git-dir 2>/dev/null); then 
-    do_sync "$DIR" "$SOURCE_REMOTE" "$DEST_REMOTE"
+if (cd $DIR; git rev-parse --git-dir 2>&1 >/dev/null); then
+    do_sync $(git rev-parse --git-dir) "$SOURCE_REMOTE" "$DEST_REMOTE"
     SYNC_COUNT=1
 else
     LIST=$(find $DIR -name *.git -type d)
