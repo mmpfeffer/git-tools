@@ -33,7 +33,7 @@ help() {
     echo "    name to end with git."
     echo
     echo "    Git submodules the submodules must be mirrored independently."
-
+    echo
     echo "PLATFORM:"
     echo "    UNIX flavors"
 }
