@@ -10,7 +10,7 @@ help() {
     usage
     echo Sync one remote to another using a local mirror.
     echo
-    echo "DIR: directory holding git repo(s) to sync. Default is current directory."
+    echo "DIR: directory holding git repo(s) to sync. Default is \$GIT_DIR or current directory if not set."
     echo "-s SOURCE_REMOTE: remote to sync from. defaults to 'origin'"
     echo "-d DEST_REMOTE: remote to sync to. defaults to 'mirror'"
     echo "-f perform sync even if local repo is not a bare repository."
@@ -83,7 +83,7 @@ parm=(DIR) # list of parameters
 SOURCE_REMOTE=${SOURCE_REMOTE:-origin}
 DEST_REMOTE=${DEST_REMOTE:-mirror}
 
-DIR=.
+DIR=${GIT_DIR:-.}
 FORCE=false
 
 # process command line...
@@ -99,7 +99,7 @@ while [[ $# -ne 0 ]]; do
 done
 
 SYNC_COUNT=0
-if (cd $DIR; git rev-parse --git-dir 2>&1 >/dev/null); then
+if (cd $DIR; git rev-parse --git-dir >/dev/null 2>&1); then
     do_sync $FORCE $(git rev-parse --git-dir) "$SOURCE_REMOTE" "$DEST_REMOTE"
     SYNC_COUNT=1
 else
@@ -109,7 +109,7 @@ else
     done
 fi
 case $SYNC_COUNT in
-   0) echo No repos found.; exit 1 ;;
+   0) echo No appropriate repos found.; exit 1 ;;
    1) ;;
    *) echo $SYNC_COUNT repos synced ;;
 esac
