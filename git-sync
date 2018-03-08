@@ -27,7 +27,7 @@ help() {
     echo "    Credentials for 'origin' and 'mirror' remotes must be configured."
     echo
     echo "LIMITATIONS:"
-    echo "    Local git repos in subdirectories of PATH must be named with .git suffix (e.g. myrepo.git)"
+    echo "    Local git repos in subdirectories DIR must be named with .git suffix (e.g. myrepo.git)"
     echo
     echo "    If the result of 'git clone' results in a directory named differently, change the directory"
     echo "    name to end with git."
