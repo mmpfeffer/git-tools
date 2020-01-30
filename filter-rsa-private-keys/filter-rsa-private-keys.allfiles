@@ -1,0 +1,38 @@
+#!/bin/bash
+
+# Run
+WORKER_SCRIPT=/tmp/filter-rsa-private-keys.worker.sh
+cat <<-'EOF' >$WORKER_SCRIPT
+	#!/bin/bash
+    	f=$1
+    	# grab all the lines of the key itself, substituting sed-special characters / and +
+        #echo SMARTING $f
+    	sed -e "/-----BEGIN RSA PRIVATE KEY-----/,/-----END RSA PRIVATE KEY-----/p" -e "1,\$d" $f 2>/dev/null|
+        	sed -e "/RSA PRIVATE KEY/d" -e "s:[/+]:.:g" -e "s:^:/:" -e "s:$:/d:" >/tmp/key_delete$$.txt
+        #echo PARTING $f
+        #sleep 3
+
+    	if [[ -s /tmp/key_delete$$.txt ]]; then
+                #echo WOAH $f
+        	echo $f
+        	cat /tmp/key_delete$$.txt
+                #echo JOE $f
+                #echo SLEEPING again for 3
+                #sleep 3
+
+        	# this sed command works on MAC. For other (LINUX) change to sed -i"" -f ...
+                #echo YES $f
+        	sed -i "" -f /tmp/key_delete$$.txt $f
+                #echo WAYTOGO $f
+    	fi
+    	rm -f /tmp/key_delete$$.txt
+	EOF
+
+chmod +x $WORKER_SCRIPT
+
+git filter-branch -f --tree-filter '
+    #file_list=$(grep -l -R "BEGIN RSA PRIVATE KEY" * 2>/dev/null || true)
+    find . -type f -not -path './.git*' -exec /tmp/filter-rsa-private-keys.worker.sh {} \;
+    ' $@
+
+rm -f $WORKER_SCRIPT

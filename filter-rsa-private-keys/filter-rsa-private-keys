@@ -1,0 +1,22 @@
+#!/bin/bash
+
+# Run
+git filter-branch -f --tree-filter '
+    file_list=$(grep -l -R "BEGIN RSA PRIVATE KEY" * 2>/dev/null || true)
+    echo FILE LIST
+    echo $file_list | tr " " "\\n"
+    if [[ -n "$f" ]]; then echo; fi
+    for f in $file_list; do
+        # grab all the lines of the key itself, substituting sed-special characters / and +
+        sed -e "/-----BEGIN RSA PRIVATE KEY-----/,/-----END RSA PRIVATE KEY-----/p" -e "1,\$d" $f |
+            sed -e "/RSA PRIVATE KEY/d" -e "s:[/+]:.:g" -e "s:^:/:" -e "s:$:/d:" >/tmp/key_delete$$.txt
+
+        if [[ -s /tmp/key_delete$$.txt ]]; then
+            echo $f
+            cat /tmp/key_delete$$.txt
+
+            # this sed command works on MAC. For other (LINUX) change to sed -i"" -f ...
+            sed -i "" -f /tmp/key_delete$$.txt $f
+        fi
+        rm -f /tmp/key_delete$$.txt
+    done' $@
