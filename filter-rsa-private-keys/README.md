@@ -33,7 +33,7 @@ the command line options for sed -i work a bit differently, so get that straight
 
 - ```filter-rsa-private-keys``` assumes that the text ```-----BEGIN RSA PRIVATE KEY-----``` and ```-----END RSA PRIVATE KEY-----```
 always come in pairs and always wrap an RSA key.  It will not find keys stored in any other way, and no
-validation is done on that assumption, and all lines between are simply deleted. It does not recognize
+validation is done on that assumption: all lines between are simply deleted. It does not recognize
 keys in PPK format. It does not recognize other kinds of private data or key formats.
 
 - Keys found in file names with white-space in the names cause the operation to fail.
