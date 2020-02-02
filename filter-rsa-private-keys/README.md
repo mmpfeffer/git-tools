@@ -27,10 +27,6 @@ should NOT be reading this or using this script.
 
 BUGS
 ----
-- ```filter-rsa-private-keys``` relies on ```sed``` to modify the affected files in place. The ```sed``` command options
-used works on Mac.  Other versions of UNIX may have a slightly different command line syntax. In particular,
-the command line options for sed -i work a bit differently, so get that straight before you run this script.
-
 - ```filter-rsa-private-keys``` assumes that the text ```-----BEGIN RSA PRIVATE KEY-----``` and ```-----END RSA PRIVATE KEY-----```
 always come in pairs and always wrap an RSA key.  It will not find keys stored in any other way, and no
 validation is done on that assumption: all lines between are simply deleted. It does not recognize
