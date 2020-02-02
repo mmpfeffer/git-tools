@@ -41,7 +41,7 @@ keys in PPK format. It does not recognize other kinds of private data or key for
 - Garbage collection on the git repo is not run. You have to take care of that yourself. See
 ```git filter-branch``` documentation and ```git gc``` documentation for more information.
 
-- If you need to update a repo in a git server (such as GitHub), you will need to be able to forceably
+- If you need to update a repo in a git server (such as GitHub), you will need to be able to forcibly
 update the branch you are filtering, otherwise you won't be able to push the updated repo. Also, you may
 need to check with the server administrator to verify that garbage collection will be run on your repo to
 remove the unwanted history after you push your changes.
