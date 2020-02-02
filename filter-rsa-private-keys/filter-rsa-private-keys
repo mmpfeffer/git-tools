@@ -1,6 +1,15 @@
 #!/bin/bash
 
 # Run
+whatos=$(uname -s)
+
+# alter SED command for Darwin (OSX).
+if [[ "$whatos" == "Darwin" ]]; then
+   SED_I_OPT='-i ""'
+else
+   SED_I_OPT='-i""'
+fi
+
 git filter-branch -f --tree-filter '
     file_list=$(grep -l -R "BEGIN RSA PRIVATE KEY" * 2>/dev/null || true)
     echo FILE LIST
@@ -14,9 +23,7 @@ git filter-branch -f --tree-filter '
         if [[ -s /tmp/key_delete$$.txt ]]; then
             echo $f
             cat /tmp/key_delete$$.txt
-
-            # this sed command works on MAC. For other (LINUX) change to sed -i"" -f ...
-            sed -i "" -f /tmp/key_delete$$.txt $f
+            sed '"$SED_I_OPT"' -f /tmp/key_delete$$.txt $f
         fi
         rm -f /tmp/key_delete$$.txt
     done' $@
