@@ -1,0 +1,987 @@
+#!/usr/bin/env python
+import os
+import re
+import sys
+import time
+import subprocess
+from   ansible.utils.color import stringc
+###
+#                   dir/subdir (see '.' command). '+-[N]' moves through repo history in this session.
+cmd_list="[+|-][N] [j|k]; N<|>; [.|+|-][N] t|m|l|!<cmd>|s|i|%; n|b; [/|?] expr; w; z; u; c; r [dir] [opts]; f|a [expr]; P; H; S; T; . ; h(elp) -- "
+def show_help():
+    return """
+Gitgo Help
+Command             Description
+--------------      ---------------------------------------------------------
+
+Repo/View
+---------
+.                   Status Report
+[./+/-N] c(heckout) Checkout specified commit.  With '.', N is a commit id or tree-ish. Use $ for end of list).
+r(epo) dir[/subdir] Move to a new git repo by directory. Subdir limits view to commits there.
+                    Options: see man page for git-log for options. Path is relative to current
+                    dir/subdir (see '.' command). dir/subdir '...' is short for top of current repo.
+
+u(pdate)            Fetch updates from origin
+
+Display
+-------
+S(quash)            Toggle inclusion of branching graphics in the display.
+T(ags)              Toggle inclusion of tags in the display.
+P(rompt)            Toggle help text on prompt.
+
+Navigation
+----------
+ENTER               Move forward one page (Default command).
+[.]N                Move to specified line. With '.', N is a commit id. Use $ for end of list).
++/-N                Move forward/backward by N lines. N defaults to the page size.
+N j|k               Move forward/backward N lines. N defaults to one (1).
+N</>                Move forward ">" / backward "<" through viewing history. N defaults to 1.
+H(istory)           Show viewing history.
+
+Windows
+-------
+[./+/-]N t(op)      Place line N at page top    [default: N is current line].
+                    .N is commit id. +/-N: line to move is relative to the current [default: +/- 1].
+
+[./+/-]N m          Place line N at page middle [default: N is current line].
+                    .N is commit id. +/-N: line to move is relative to the current [default: +/- 1].
+
+[./+/-]N l(ast)     Place line N at page bottom [default: N is current line].
+                    .N is commit id. +/-N: line to move is relative to the current [default: +/- 1].
+
+Actions
+-------
+[./+/-]N s(how)     'git show' the commit on line N. N defaults to the current line.
+                    .N is commit id. +/-N: relative to current line [default: +/- 1].
+
+[./+/-]N i(nspect)  Inspect full 'git log' for the commit on line N. N defaults to the current line.
+                    .N is commit id. +/-N: relative to current line [default +/1 1].
+
+[./+/-]N %          'git show' list of files changes for the commit on line N. N defaults to the current line.
+                    .N is commit id. +/-N: relative to current line [default +/1 1].
+
+n(ext)|b(ack)       'git show' the next|previous line commit.
+
+[./+/-]N !cmd       Issue shell command. $ID contains commit id [default: N is the current line].
+                    .N is commit id. +/-N: relative to current line [default: +/- 1]. #N replaced with
+                    short commit hash for line N. ## replaced with current line short commit hash.
+                    Current working directory is the directory under inspection (see 'repo' command).
+
+Filter/Search
+-------------
+/regex              Search for text in commit message. Omit regex to repeat.
+?regex              Search backward for text in commit message. Omit regex to repeat.
+f(ilter) [regex]    Set a regex filter on commit message. Leave empty to clear.
+a(uthor) [regex]    Set a regex filter for author. Leave empty to clear.
+w                   Refresh the page.
+z                   List commit authors. Honours a(uthor) and f(ilter) settings
+h(elp)              This help.
+""".strip()
+
+def get_repo_dir():
+    try:
+        git_top=subprocess.check_output('git rev-parse --git-dir 2>/dev/null', shell=True).strip()
+        git_top=os.path.abspath(git_top)
+        git_top=os.path.dirname(git_top)
+    except:
+        git_top=''
+    return git_top
+
+def terminal_size():
+    import fcntl, termios, struct
+    th, tw, hp, wp = struct.unpack('HHHH',
+        fcntl.ioctl(0, termios.TIOCGWINSZ,
+        struct.pack('HHHH', 0, 0, 0, 0)))
+    return tw, th
+
+ansi_regex = r'\x1b(' \
+             r'(\[\??\d+[hl])|' \
+             r'([=<>a-kzNM78])|' \
+             r'([\(\)][a-b0-2])|' \
+             r'(\[\d{0,2}[ma-dgkjqi])|' \
+             r'(\[\d+;\d+[hfy]?)|' \
+             r'(\[;?[hf])|' \
+             r'(#[3-68])|' \
+             r'([01356]n)|' \
+             r'(O[mlnp-z]?)|' \
+             r'(/Z)|' \
+             r'(\d+)|' \
+             r'(\[\?\d;\d0c)|' \
+             r'(\d;\dR))'
+ansi_escape = re.compile(ansi_regex, flags=re.IGNORECASE)
+
+
+def repoC():
+   '''get current repo'''
+   global repo_history, repo_history_pos
+   return repo_history[repo_history_pos-1]
+
+def repo_history_reset():
+   global repo_history, repo_history_pos
+   repo_history = []
+   repo_history_pos = 0
+
+def repo_history_add(repo):
+   global repo_history, repo_history_pos
+   if repo_history_pos != 0:
+       if repo == repo_history[repo_history_pos-1]: # If we moved, adjust history
+           return repo
+
+   repo_history = repo_history[:repo_history_pos]
+   repo_history.append(repo)
+   repo_history_pos += 1
+   return repo
+
+def repo_history_move(delta):
+   global repo_history, repo_history_pos
+   repo_history_pos = repo_history_pos + delta
+   repo_history_pos = repo_history_pos if repo_history_pos > 1 else 1
+   repo_history_pos = repo_history_pos if repo_history_pos < len(repo_history) else len(repo_history)
+   repo = repo_history[repo_history_pos-1] # 'pos' index is between current and next history point
+   return repo
+
+def repo_history_print():
+   global repo_history, repo_history_pos
+   for i in range(len(repo_history)):
+       prefix=" "
+       if i == repo_history_pos-1:
+           prefix = "*"
+       print_data(repo_history[i], prefix)
+
+def ptrC():
+   '''get current pointer'''
+   global ptr_history, ptr_history_pos
+   return ptr_history[ptr_history_pos-1]
+
+def ptr_history_reset():
+   global ptr_history, ptr_history_pos
+   ptr_history = []
+   ptr_history_pos = 0
+
+def ptr_history_add(ptr):
+   global ptr_history, ptr_history_pos
+   if ptr_history_pos != 0:
+       if ptr == ptr_history[ptr_history_pos-1]: # If we moved, adjust history
+           return ptr
+
+   ptr_history = ptr_history[:ptr_history_pos]
+   ptr_history.append(ptr)
+   ptr_history_pos += 1
+   return ptr
+
+def ptr_history_move(ptr, delta):
+   global ptr_history, ptr_history_pos
+   new_ptr_history_pos = ptr_history_pos
+   new_ptr_history_pos = new_ptr_history_pos + delta
+   new_ptr_history_pos = new_ptr_history_pos if new_ptr_history_pos > 1 else 1
+   new_ptr_history_pos = new_ptr_history_pos if new_ptr_history_pos < len(ptr_history) else len(ptr_history)
+   new_ptr = ptr_history[new_ptr_history_pos-1] # 'pos' index is between current and next history point
+   if selected(new_ptr):
+       ptr_history_pos = new_ptr_history_pos
+       return new_ptr
+   return ptr # new position is filtered out. Don't move
+
+def ptr_history_print():
+   global ptr_history, ptr_history_pos
+   for i in range(len(ptr_history)):
+       prefix=" "
+       if i == ptr_history_pos-1:
+           prefix = "*"
+       print_data(ptr_history[i], prefix)
+
+def clean_string(string):
+    return ansi_escape.sub('', string)
+
+def print_data(ptr, prefix=" "):
+    sptr = "%6d" % ptr
+    printline = "%s%s:" % (prefix, stringc(sptr, 'green') if prefix=="*" else sptr)
+    print printline, get_data(ptr) # print data separately to accommodate unicode
+
+def get_data(ptr):
+    if ptr < 1 or ptr > max_data:
+        return ''
+    if tag_toggle != '':
+        output = re.sub(' \([ \t]*\)', '', re.sub(tag_pattern, '', data[ptr]))
+    else:
+        output = data[ptr]
+
+    if squash_toggle != '':
+        output = re.sub('( ?\x1b[^m]*m[_|/\\\\]\x1b[^m]*m)*', '', output)
+        output = re.sub('^ *[*] *', '* ', output)
+
+    return output.rstrip()
+
+def selected(ptr):
+    data = get_data(ptr)
+    if data:
+        if author:
+            return re.findall("^[^<]*<[^>]*%s[^>]*>" % author, data)
+        elif filter:
+            match = re.findall("^[^<]*[0-9a-f]{7}[^<]*<", data)
+            return re.findall("[0-9a-f]{7}.*%s" % filter, match[0][:-1]) if match else False
+        return True
+    else:
+        return False
+
+
+def getrepo(pathspec, opts):
+    os.system("git log --color --graph --pretty=format:'%Cred%h%Creset -%C(yellow)%d%Creset %s %Cgreen(%cr) %C(bold blue)<%an>%Creset' --abbrev-commit {} -- {} > /tmp/gitgo.txt".format(' '.join(opts), pathspec))
+    with open("/tmp/gitgo.txt") as fp:
+        data=fp.readlines()
+        data=[d[:-1] if (d[len(d)-1] == '\n') else d  for d in data] # remove newlines
+        data.insert(0,"DUMMY")
+        max_data = len(data)-1
+    return data, max_data
+
+def find_commit(id):
+    found = False
+    new_ptr = 0
+    for ptr in range(len(data)):
+        if ptr == 0:
+            continue
+        try:
+            match_id = re.findall("[0-9a-f]{7}", get_data(ptr))[0]
+        except:
+            match_id = "nomatch"
+        if selected(ptr) and (id == match_id[0:len(id)]):
+            if found:
+                return -1 # duplicate
+            found = True
+            new_ptr = ptr
+
+    return new_ptr # 0 if not found, ptr if found
+
+def show_window(ptr, target_ptr):
+    os.system("clear")
+    match_ptr = ptr
+    count = 0
+    while count < windowsize and match_ptr <= max_data:
+        if selected(match_ptr):
+            print_data(match_ptr, prefix = "*" if match_ptr == target_ptr else " ")
+            count += 1
+            if match_ptr <= target_ptr:
+                ptr = match_ptr
+        match_ptr += 1
+    return ptr
+
+def get_visible_lineno(ptr):
+    return get_visible_lineno_diff(0, ptr)
+
+def get_visible_lineno_diff(ptr1, ptr2):
+    if ptr1 == ptr2:
+        return 0
+    direction = abs(ptr2 - ptr1)/(ptr2 - ptr1)
+    count = 0
+    new_ptr = ptr1
+    while new_ptr != ptr2:
+        new_ptr += direction
+        if selected(new_ptr):
+            count += direction
+    return count
+
+def get_nearest_selected(ptr):
+    if selected(ptr):
+        return ptr
+
+    new_ptr = ptr
+    while new_ptr+1 <= max_data:
+        new_ptr += 1
+        if selected(new_ptr):
+            return new_ptr
+    while new_ptr-1 >= 1:
+        new_ptr -= 1
+        if selected(new_ptr):
+            return new_ptr
+    return ptr # fall back to current
+
+def get_offset_ptr(ptr, offset):
+    if not offset:
+        return ptr
+
+    direction = abs(offset)/offset
+    match_ptr = ptr
+    new_ptr = ptr
+    count = 0
+    while count < abs(offset) and new_ptr+direction >= 1 and new_ptr+direction <= max_data:
+        new_ptr += direction
+        if selected(new_ptr):
+            count += 1
+            match_ptr = new_ptr
+    return match_ptr
+
+def get_top_ptr(ptr):
+    return get_offset_ptr(ptr, -windowsize+1)
+
+def get_bottom_ptr(ptr):
+    return get_offset_ptr(ptr, windowsize-1)
+
+def get_target_ptr(ptr, new_ptr):
+        bottom_ptr = get_bottom_ptr(new_ptr)
+        return ptr if (bottom_ptr >= ptr) and (ptr >= new_ptr) else new_ptr
+
+def get_mid_ptr(ptr):
+    top_ptr = get_top_ptr(ptr)
+    lineno_diff = get_visible_lineno_diff(ptr, top_ptr)
+    offset = lineno_diff/2
+    return get_offset_ptr(ptr, offset)
+
+def get_half_window_ptr(ptr):
+    top_ptr = get_top_ptr(ptr)
+    return get_offset_ptr(top_ptr, windowsize/2)
+
+def ptr_delta(ptr, delta, direction):
+    count = 0
+    new_ptr = ptr #keep original, unless matched.
+    search_ptr = ptr
+    while count < delta and search_ptr+direction >= 1 and search_ptr+direction <= max_data:
+        search_ptr += direction
+        if selected(search_ptr):
+            count += 1
+            new_ptr = search_ptr
+    return new_ptr
+
+def shift_window(ptr, delta, offset, target_ptr):
+        direction = 1
+        total_delta = delta + offset
+        if total_delta != 0:
+            direction = abs(total_delta)/total_delta
+        new_ptr = ptr
+        count = 0
+        match_ptr = ptr #keep original, unless matched.
+        while count < abs(total_delta) and new_ptr+direction >= 1 and new_ptr+direction <= max_data:
+            new_ptr += direction
+            if selected(new_ptr):
+                count += 1
+                match_ptr = new_ptr
+
+        ptr = show_window(match_ptr, target_ptr)
+        return ptr
+
+def find_current_to_bottom_ptr(ptr, command, default_offset):
+        if re.findall('[0-9]', command):
+            offset = int(command.replace('last', '').replace('l',''))
+        else:
+            offset = default_offset
+        #mid_ptr = get_mid_ptr(ptr)
+        new_ptr = get_offset_ptr(ptrC(), offset)
+        return new_ptr
+
+def find_line_ptr(ptr, command, default_offset):
+        if re.findall('[0-9]', command):
+            offset = int(command)
+        else:
+            offset = default_offset
+
+        new_ptr = get_offset_ptr(ptr, offset)
+        return new_ptr
+
+def do_search(ptr, command, direction):
+        global cmd_regx
+        if len(command) != 1:
+            cmd_regx = command[1:]
+
+        new_ptr = ptr + direction
+        while new_ptr <= max_data and new_ptr >= 1:
+            if selected(new_ptr):
+                if re.findall (cmd_regx, get_data(new_ptr)):
+                    ptr = ptr_history_add(new_ptr)
+                    print_data(ptr, prefix = "*")
+                    break
+            new_ptr += direction
+        return ptr
+
+def navPtr(ptr, navCommand, direction):
+        if re.findall('[0-9]', command):
+            delta = int(navCommand)
+        else:
+            delta = direction
+        new_ptr = ptr
+        count = 0
+        match_ptr = ptr #keep original, unless matched.
+        while count < (-delta) and new_ptr+direction >= 1 and new_ptr+direction <= max_data:
+            new_ptr += direction
+            if selected(new_ptr):
+                count += 1
+                match_ptr = new_ptr
+
+        ptr = match_ptr
+        return ptr
+
+def getId(ptr, default=None):
+        try:
+            id = re.findall("[0-9a-f]{7}", get_data(ptr))
+        except:
+            id = default
+        return id
+
+def gitShow(ptr, id, opts=''):
+        if id:
+            id = id[0]
+            cmd='git show %s --color %s %s' % (opts, id, pathspec)
+            os.system("(echo '#%s %s: ';" % (ptr,cmd) +  cmd + ")|less -XFr") # colored, paged output with heading
+
+def gitLog(ptr, id):
+        if id:
+            id = id[0]
+            cmd='git log --color -1 %s %s' % (id, pathspec)
+            os.system("(echo '#%s %s: ';" % (ptr,cmd) +  cmd + ")|less -XFr") # colored, paged output with heading
+
+def checkout(treeish):
+       cmd='git checkout %s' % treeish
+       result=os.system(cmd)
+       if (result != 0):
+           cmd='echo "Press ENTER to continue" && read z'
+           os.system(cmd)
+       return result
+
+
+# Action Functions
+def execute_cmd(ptr, command, direction):
+        orig_ptr = ptr
+        if direction:
+            if re.findall('[0-9]', command):
+                delta = direction*int(re.sub('!.*', '', command))
+            else:
+                delta = 1
+
+            new_ptr = ptr_delta(ptr, delta, direction)
+        else:
+            if re.findall('^[0-9]', command.strip()):
+                new_ptr = int(re.sub('!.*', '', command))
+            else:
+                new_ptr = ptr
+            new_ptr = new_ptr if new_ptr < max_data else max_data
+
+        ptr = new_ptr
+        id = getId(ptr)
+
+        cmd = re.sub('[^!]*!', '', command)
+        bad_ptr_expr = []
+        if re.findall('##', cmd):
+            this_id_num = getId(ptrC())
+            if this_id_num:
+                cmd = cmd.replace('##', str(this_id_num[0]))
+            else:
+                bad_ptr_expr.append('##' % ptrC())
+        ids = list(set(re.findall('#[1-9][0-9]*', cmd)))
+        for ptr_expr in ids:
+            id_num = getId(int(ptr_expr[1:]))
+            if id_num:
+                cmd = cmd.replace(ptr_expr, str(id_num[0]))
+            else:
+                bad_ptr_expr.append(ptr_expr)
+
+        if bad_ptr_expr:
+            print "No commit for: %s" % ", ".join(bad_ptr_expr)
+            return orig_ptr
+        else:
+            os.environ['ID'] = id[0] if id else ''
+            if pathspec: # if working in a subtree, go there first...
+                saved_repo_dir = get_repo_dir() # save the top of the git repo
+                os.chdir(pathspec)
+            os.system(cmd)
+            if pathspec: # if working in a subtree, go there first...
+                os.chdir(saved_repo_dir)
+            print_data(ptr, "*")
+            return ptr
+
+def move_jk(ptr, command, direction, default_offset):
+        if re.findall('[0-9]', command):
+            offset = direction * int(command[:-1])
+        else:
+            offset = default_offset
+
+        delta = -windowsize + 1
+        target_ptr = get_offset_ptr(ptr, offset)
+        return shift_window(ptr, delta, offset, target_ptr)
+
+def move_to_top(ptr, command, default_offset):
+        mid_point = get_mid_ptr(ptr)
+        if re.findall('[0-9]', command):
+            offset = int(command.replace('top', '').replace('t',''))
+        else:
+            offset = default_offset
+        new_ptr = get_offset_ptr(ptrC(), offset)
+        target_ptr = get_target_ptr(ptr, new_ptr)
+        return show_window(new_ptr, target_ptr)
+
+def move_to_middle(ptr, command, default_offset):
+        if re.findall('[0-9]', command):
+            offset = int(command.replace('middle', '').replace('m',''))
+        else:
+            offset = default_offset
+        mid_point = get_half_window_ptr(ptr)
+        mid_point_diff = get_visible_lineno_diff(mid_point, ptrC())
+        top_ptr = get_top_ptr(ptr)
+        new_ptr = get_offset_ptr(top_ptr, mid_point_diff + offset)
+        target_ptr = get_target_ptr(ptr, new_ptr)
+        return show_window(new_ptr, target_ptr)
+
+cmd_toggle=cmd_list
+tag_pattern='tag: [^ ),]*(, )?'
+tag_toggle=''
+squash_toggle=''
+
+author=''
+filter=''
+pathspec=''
+cmd_regx=''
+ptr=1
+windowsize = terminal_size()[1]-1
+
+command = "repo %s" % " ".join(sys.argv[1:])
+
+repo_history_reset()
+print "Welcome to gitgo: 'h' for help"
+while True:
+    if re.findall("^r", command): ###r### ###repo###
+        pos=1
+        if command[0:4] == 'repo':
+            pos=4
+        opts=command[pos:].strip().split(" ")
+
+        if pathspec: # if working in a subtree, go there first...
+            os.chdir(pathspec)
+
+        new_dir=os.path.abspath('.') # default
+        if opts: # look for directory spec as the first opt.
+            saved_repo_dir = get_repo_dir() # save the top of the git repo
+
+            if opts[0] == '...': # Special case: go to top of current repo
+                opts[0] = get_repo_dir()
+
+            if (os.path.isdir(os.path.expanduser(opts[0]))):
+               new_dir=os.path.abspath(os.path.expanduser(opts.pop(0)))
+
+        if (os.path.isdir(new_dir)):
+            os.chdir(new_dir)         # go to the target dir
+            repo_dir = get_repo_dir() # find the top of the git repo
+            if repo_dir:
+                os.chdir(repo_dir)        # go to the top of the git repo
+
+                pathspec=new_dir[len(repo_dir)+1:]  # take whatever is left as the relative target
+                data, max_data = getrepo(pathspec, opts) # load the target using log options given
+            else:
+                data=[]
+                max_data = 0
+            cmd_regx = ''
+            author = ''
+            filter = ''
+            ptr_history_reset()
+            command = 'w'
+            windowsize = terminal_size()[1]-1
+            ptr=min(windowsize, max_data)
+        else:
+            print "No directory"
+            command = "super1232320340secretskipit"
+            os.chdir(saved_repo_dir)
+    elif command in ['T', 'Tags']: ###T### ###Tags###
+        tag_toggle = tag_pattern if tag_toggle == '' else ''
+        command = 'w'
+    elif command in ['S', 'Squash']: ###S### ###Squash###
+        squash_toggle = "squash" if squash_toggle == '' else ''
+        command = 'w'
+    elif command in ['H', 'History']: ###H### ###History###
+        ptr_history_print()
+        command = "super1232320340secretskipit"
+    elif re.findall("^author[ \t]*", command): ###author###
+        author=command[6:].strip()
+        filter='' if author else filter
+        ptr = get_nearest_selected(ptr)
+        command = 'w'
+    elif re.findall("^a[ \t]*", command): ###a###
+        author=command[1:].strip()
+        filter='' if author else filter
+        ptr = get_nearest_selected(ptr)
+        command = 'w'
+    elif re.findall("^filter[ \t]*", command): ###filter###
+        new_ptr = ptr+1
+        filter=command[6:].strip()
+        author='' if filter else author
+        ptr = get_nearest_selected(ptr)
+        command='w'
+    elif re.findall("^f[ \t]*", command): ###f###
+        new_ptr = ptr+1
+        filter=command[1:].strip()
+        author='' if filter else author
+        ptr = get_nearest_selected(ptr)
+        command='w'
+
+    if command == '': ###empty###
+        command = '+%d' % windowsize
+    elif re.findall("^[\t ]*[1-9][0-9]*$", command): ###N###
+        ptr = int(re.findall("^[\t ]*[1-9][0-9]*$", command)[0].strip())
+        ptr = ptr if ptr < max_data else max_data
+        ptr = ptr if ptr >= 1 else 1
+        ptr = get_nearest_selected(ptr)
+        command = 'w'
+
+    elif re.findall("^[\t ]*\.[0-9a-f]{1,7}$", command): ###dotN###
+        new_ptr = find_commit(command.strip()[1:])
+        if new_ptr > 0:
+            command = "%s" % (new_ptr)
+            continue
+        elif new_ptr == -1:
+            print "Not unique"
+        else:
+            print "Not found"
+            command = "super1232320340secretskipit"
+
+    if command == "super1232320340secretskipit": ###skip###
+        pass
+    elif command == '.': ###dot###
+        current_repo_dir = get_repo_dir()
+        if current_repo_dir:
+            print ("Repo Dir:     '%s'" % get_repo_dir())
+            os.system("echo 'Checkout:     '$(git log --color=always --decorate=short --oneline -1)")
+            print ("Current Path: '%s'" % (get_repo_dir() + ('/'+pathspec if pathspec else '')))
+            print ("Entries:      %d" % max_data)
+            if author:
+                print ("Author Filt:  '%s'" % author)
+            elif filter:
+                print ("Filter:       '%s'" % filter)
+            print ("Search:       '%s'" % cmd_regx)
+            print ("Tags:         %s" % ('show' if tag_toggle == '' else 'hide'))
+            print ("Tree:         %s" % ('show' if squash_toggle == '' else 'hide'))
+        else:
+            print "No repo selected"
+    elif command in ['q', 'Q']: ###q### ###Q###
+        sys.exit(0)
+    elif command in ['h', 'help']: ###h### ###help###
+        os.system("echo '%s' | less -XFr" % show_help())
+    elif re.findall("^[ \t]*u(pdate)?[ \t]*$", command): ###u### ###update###
+        os.system('git fetch origin')
+        os.system('git remote update origin --prune')
+        command = 'r .'
+        continue
+    elif re.findall("^[ \t]*\-([0-9][0-9]*)?[ \t]*!", command): ###-!### ###-N!###
+        ptr = ptr_history_add(execute_cmd(ptr, command, direction=-1))
+
+    elif re.findall("^[ \t]*\+([0-9][0-9]*)?[ \t]*!", command): ###+!### ###+N!###
+        ptr = ptr_history_add(execute_cmd(ptr, command, direction=+1))
+
+    elif re.findall("^[ \t]*([1-9][0-9]*)?[ \t]*!", command): ###!### ###N!###
+        ptr = ptr_history_add(execute_cmd(ptr, command, direction=0))
+
+    elif re.findall("^[ \t]*\.[a-f0-9]{1,7}[ \t]*!", command): ###dotN!###
+        id =  re.sub('!.*', '', command)[1:].strip()
+        new_ptr = find_commit(id)
+        if new_ptr > 0:
+            cmd = re.sub('[^!]*!', '', command)
+            command = "%d!%s" % (new_ptr, cmd)
+            continue
+        elif new_ptr == -1:
+            print "Not unique"
+        else:
+            print "Not found"
+    elif re.findall("^[ \t]*([0-9][0-9]*)?j$", command): ###j### ###Nj###
+        ptr = ptr_history_add(move_jk(ptr, command, direction=1, default_offset=1))
+    elif re.findall("^[ \t]*([0-9][0-9]*)?k$", command): ###k### ###Nk###
+        ptr = ptr_history_add(move_jk(ptr, command, direction=-1, default_offset=-1))
+    elif command == "$": ###$###
+        new_ptr = max_data+1
+        match_ptr = ptr
+        while new_ptr > 1:
+            new_ptr -= 1
+            if selected(new_ptr):
+                match_ptr = new_ptr
+                print_data(match_ptr)
+                break
+        if match_ptr != ptr:
+            ptr = match_ptr
+            command = "w"
+            continue
+
+    elif re.findall("^/", command): ###/###
+        ptr = ptr_history_add(do_search(ptr, command, direction = 1))
+    elif re.findall("^\?", command): ###?###
+        ptr = ptr_history_add(do_search(ptr, command, direction = -1))
+    elif re.findall("^[ \t]*\-([0-9][0-9]*)?t(op)?$", command): ###-t### ###-top### ###-Nt### ###-Ntop###
+        ptr = ptr_history_add(move_to_top(ptr, command, default_offset=-1))
+    elif re.findall("^[ \t]*\+([0-9][0-9]*)?t(op)?$", command): ###+t### ###+top### ###+Nt### ###+Ntop###
+        ptr = ptr_history_add(move_to_top(ptr, command, default_offset=1))
+
+    elif re.findall("^[ \t]*([0-9][0-9]*)?t(op)?$", command): ###t### ###top### ###Nt### ###Ntop###
+        if re.findall('[0-9]', command):
+            new_ptr = int(command.replace('top', '').replace('t',''))
+        else:
+            new_ptr = ptrC()
+        target_ptr = get_target_ptr(ptr, new_ptr)
+        ptr = ptr_history_add(show_window(new_ptr, target_ptr))
+
+    elif re.findall("^[ \t]*\.[a-f0-9]{1,7}t(op)?$", command): ###dotNt### ###dotNtop###
+        id =  re.sub('t.*', '', command)[1:].strip()
+        new_ptr = find_commit(id)
+        if new_ptr > 0:
+            target_ptr = get_target_ptr(ptr, new_ptr)
+            ptr = ptr_history_add(show_window(new_ptr, target_ptr))
+        elif new_ptr == -1:
+            print "Not unique"
+        else:
+            print "Not found"
+
+    elif re.findall("^[ \t]*\-([0-9][0-9]*)?m(iddle)?$", command): ###-m### ###-middle### ###-Nm### ###-Nmiddle###
+        ptr = ptr_history_add(move_to_middle(ptr, command, default_offset = -1))
+    elif re.findall("^[ \t]*\+([0-9][0-9]*)?m(iddle)?$", command): ###+m### ###+middle### ###+Nm### ###+Nmiddle###
+        ptr = ptr_history_add(move_to_middle(ptr, command, default_offset = 1))
+    elif re.findall("^[ \t]*([0-9][0-9]*)?m(iddle)?$", command): ###m### ###middle### ###Nm### ###Nmiddle###
+        if re.findall('[0-9]', command):
+            new_mid_ptr = int(command.replace('middle', '').replace('m',''))
+        else:
+            new_mid_ptr = ptrC()
+
+        top_ptr = get_top_ptr(ptr)
+        mid_ptr = get_half_window_ptr(ptr)
+        top_point_diff = get_visible_lineno_diff(mid_ptr, top_ptr)
+        new_ptr = get_offset_ptr(new_mid_ptr, top_point_diff)
+
+        target_ptr = get_target_ptr(ptr, new_ptr)
+        ptr = ptr_history_add(show_window(new_ptr, target_ptr))
+
+    elif re.findall("^[ \t]*\.[a-f0-9]{1,7}m(iddle)?$", command): ###dotNm### ###dotNmiddle###
+        id =  re.sub('m.*', '', command)[1:].strip()
+        new_ptr = find_commit(id)
+        if new_ptr > 0:
+            command = "%dm" % new_ptr
+            continue
+        elif new_ptr == -1:
+            print "Not unique"
+        else:
+            print "Not found"
+
+    elif re.findall("^[ \t]*\-([0-9][0-9]*)?l(ast)?$", command): ###-l### ###-last### ###-Nl### ###-Nlast###
+        ptr = find_current_to_bottom_ptr(ptr, command, default_offset = -1)
+        command = "w"
+        continue
+    elif re.findall("^[ \t]*\+([0-9][0-9]*)?l(ast)?$", command): ###+l### ###+last### ###+Nl### ###+Nlast###
+        ptr = find_current_to_bottom_ptr(ptr, command, default_offset = 1)
+        command = "w"
+        continue
+    elif re.findall("^[ \t]*([0-9][0-9]*)?l(ast)?$", command): ###l### ###last### ###Nl### ###Nlast###
+        if re.findall('[0-9]', command):
+            ptr = int(command.replace('last', '').replace('l',''))
+            ptr = ptr if ptr < max_data else max_data
+            ptr = ptr if ptr >= 1 else 1
+            command = 'w'
+            continue
+        else:
+            ptr = find_current_to_bottom_ptr(ptr, command, default_offset = 0)
+            command = "w"
+            continue
+
+    elif re.findall("^[ \t]*\.[a-f0-9]{1,7}l(ast)?$", command): ###dotNl### ###dotNlast###
+        id =  re.sub('l.*', '', command)[1:].strip()
+        new_ptr = find_commit(id)
+        if new_ptr > 0:
+            command = "%dl" % new_ptr
+            continue
+        elif new_ptr == -1:
+            print "Not unique"
+        else:
+            print "Not found"
+
+    elif re.findall("^[ \t]*-([0-9][0-9]*)?$", command): ###-### ###-N###
+        ptr = find_line_ptr(ptr, command, default_offset = -1)
+        command = 'w'
+        continue
+    elif re.findall("^[ \t]*\+([0-9][0-9]*)?$", command): ###+### ###+N###
+        ptr = find_line_ptr(ptr, command, default_offset = 1)
+        command = 'w'
+        continue
+    elif re.findall("^[ \t]*w?$", command): ###w###
+        top_ptr = get_top_ptr(ptr)
+        ptr = ptr_history_add(show_window(top_ptr, target_ptr=ptr))
+    elif re.findall("^[ \t]*z$", command): ###z###
+        auths = set()
+        for search_ptr in range(len(data)):
+            if search_ptr and selected(search_ptr):
+                auths |= set([clean_string(a[1:-1]) for a in re.findall("<[^>]*[^>]*>", get_data(search_ptr))])
+        print '\n'.join(sorted(auths, key=lambda s: s.lower()))
+        print_data(ptr)
+
+    elif re.findall("^[ \t]*n(ext)?$", command): ###n### ###next###
+        match_ptr = ptr
+        new_ptr = ptr
+        while new_ptr < max_data:
+            new_ptr += 1
+            if selected(new_ptr):
+                match_ptr = new_ptr
+                break
+        if match_ptr != ptr:
+            ptr = ptr_history_add(match_ptr)
+            command = 's'
+            continue
+        else:
+            print("No commit to show")
+    elif re.findall("^[ \t]*b(ack)?$", command): ###b### ###back###
+        match_ptr = ptr
+        new_ptr = ptr
+        while new_ptr > 1:
+            new_ptr -= 1
+            if selected(new_ptr):
+                match_ptr = new_ptr
+                break
+        if match_ptr != ptr:
+            ptr = ptr_history_add(match_ptr)
+            command = 's'
+            continue
+        else:
+            print("No commit to show")
+
+    elif re.findall("^[ \t]*([1-9][0-9]*)?[ \t]*<$", command): ###<### ###N<###
+        ptr = ptr_history_move(ptr, -(int("0"+command[:-1]) if command[:-1] else 1))
+        command = 'w'
+        continue
+    elif re.findall("^[ \t]*([1-9][0-9]*)?[ \t]*\>$", command): ###>### ###N>###
+        ptr = ptr_history_move(ptr, int("0"+command[:-1]) if command[:-1] else 1)
+        command = 'w'
+        continue
+    elif re.findall("^[ \t]*\-([0-9][0-9]*)?[ \t]*%$", command): ###-%### ###-N%###
+        ptr = ptr_history_add(navPtr(ptr, command.replace('%', ''), direction=-1))
+        id = getId(ptr)
+        gitShow(ptr, id, '--name-only')
+        print_data(ptr)
+    elif re.findall("^[ \t]*\+([0-9][0-9]*)?[ \t]*%$", command): ###+%### ###+N%###
+        ptr = ptr_history_add(navPtr(ptr, command.replace('%', ''), direction=1))
+        id = getId(ptr)
+        gitShow(ptr, id, '--name-only')
+        print_data(ptr)
+    elif re.findall("^[ \t]*([1-9][0-9]*)?[ \t]*%$", command): ###%### ###N%###
+        if re.findall('^[1-9]', command.strip()):
+            new_ptr = int(command.replace('%', ''))
+        else:
+            new_ptr = ptr
+        new_ptr = new_ptr if new_ptr < max_data else max_data
+        ptr = ptr_history_add(new_ptr)
+        id = getId(ptr)
+        gitShow(ptr, id, '--name-only')
+        print_data(ptr)
+    elif re.findall("^[ \t]*\-([0-9][0-9]*)?[ \t]*c(heckout)?$", command): ###-i### ###-checkout### ###-Nc### #######-Ncheckout
+        ptr = ptr_history_add(navPtr(ptr, command.replace('checkout', '').replace('c', ''), direction=-1))
+        id = getId(ptr)
+        treeish=id[0]
+        result=checkout(treeish)
+        if (result == 0):
+            pathspec=''
+            command = "r"
+            continue
+
+    elif re.findall("^[ \t]*\+([0-9][0-9]*)?[ \t]*c(heckout)?$", command): ###+c### ###+checkout### ###+Nc### #######+Ncheckout
+        ptr = ptr_history_add(navPtr(ptr, command.replace('checkout', '').replace('c', ''), direction=1))
+        id = getId(ptr)
+        treeish=id[0]
+        result=checkout(treeish)
+        if (result == 0):
+            pathspec=''
+            command = "r"
+            continue
+
+    elif re.findall("^[ \t]*([1-9][0-9]*)?[ \t]*c(heckout)?$", command): ###c### ###checkout### ###Nc### #######Ncheckout
+        if re.findall('^[1-9]', command.strip()):
+            new_ptr = int(command.replace('checkout', '').replace('c',''))
+        else:
+            new_ptr = ptr
+        new_ptr = new_ptr if new_ptr < max_data else max_data
+        ptr = ptr_history_add(new_ptr)
+        id = getId(ptr)
+        treeish=id[0]
+        result=checkout(treeish)
+        if (result == 0):
+            pathspec=''
+            command = "r"
+            continue
+
+    elif re.findall("^[ \t]*\.[^ \t]*[ \t]*[ \t]c(heckout)?$", command): ###dotN c### ###dotN checkout###
+        treeish =  re.sub('[ \t]c.*', '', command)[1:].strip()
+        result=checkout(treeish)
+        if (result == 0):
+            pathspec=''
+            command = "r"
+            continue
+
+    elif re.findall("^[ \t]*\-([0-9][0-9]*)?[ \t]*i(nspect)?$", command): ###-i### ###-inspect### ###-Ni### #######-Ninspect
+        ptr = ptr_history_add(navPtr(ptr, command.replace('inspect', '').replace('i', ''), direction=-1))
+        id = getId(ptr)
+        gitLog(ptr, id)
+        print_data(ptr)
+    elif re.findall("^[ \t]*\+([0-9][0-9]*)?[ \t]*i(nspect)?$", command): ###+i### ###+inspect### ###+Ni### #######+Ninspect
+        ptr = ptr_history_add(navPtr(ptr, command.replace('inspect', '').replace('i', ''), direction=1))
+        id = getId(ptr)
+        gitLog(ptr, id)
+        print_data(ptr)
+    elif re.findall("^[ \t]*([1-9][0-9]*)?[ \t]*i(nspect)?$", command): ###i### ###inspect### ###Ni### #######Ninspect
+        if re.findall('^[1-9]', command.strip()):
+            new_ptr = int(command.replace('inspect', '').replace('i',''))
+        else:
+            new_ptr = ptr
+        new_ptr = new_ptr if new_ptr < max_data else max_data
+        ptr = ptr_history_add(new_ptr)
+        id = getId(ptr)
+        gitLog(ptr, id)
+        print_data(ptr)
+    elif re.findall("^[ \t]*\.[a-f0-9]{1,7}[ \t]*i(nspect)?$", command): ###dotNi### ###dotNinspect###
+        id =  re.sub('i.*', '', command)[1:].strip()
+        new_ptr = find_commit(id)
+        if new_ptr > 0:
+            command = "%di" % new_ptr
+            continue
+        elif new_ptr == -1:
+            print "Not unique"
+        else:
+            print "Not found"
+
+    elif re.findall("^[ \t]*\-([0-9][0-9]*)?[ \t]*s(how)?$", command): ###-s### ###-show### ###-Ns### #######-Nshow
+        ptr = ptr_history_add(navPtr(ptr, command.replace('show', '').replace('s', ''), direction=-1))
+        id = getId(ptr)
+        gitShow(ptr, id)
+        print_data(ptr)
+    elif re.findall("^[ \t]*\+([0-9][0-9]*)?[ \t]*s(how)?$", command): ###+s### ###+show### ###+Ns### #######+Nshow
+        ptr = ptr_history_add(navPtr(ptr, command.replace('show', '').replace('s', ''), direction=1))
+        id = getId(ptr)
+        gitShow(ptr, id)
+    elif re.findall("^[ \t]*([1-9][0-9]*)?[ \t]*s(how)?$", command): ###s### ###show### ###Ns### #######Nshow
+        if re.findall('^[1-9]', command.strip()):
+            new_ptr = int(command.replace('show', '').replace('s',''))
+        else:
+            new_ptr = ptr
+        new_ptr = new_ptr if new_ptr < max_data else max_data
+        ptr = ptr_history_add(new_ptr)
+        id = getId(ptr)
+        gitShow(ptr, id)
+        print_data(ptr)
+    elif re.findall("^[ \t]*\.[a-f0-9]{1,7}[ \t]*s(how)?$", command): ###dotNs### ###dotNshow###
+        id =  re.sub('s.*', '', command)[1:].strip()
+        new_ptr = find_commit(id)
+        if new_ptr > 0:
+            command = "%ds" % new_ptr
+            continue
+        elif new_ptr == -1:
+            print "Not unique"
+        else:
+            print "Not found"
+
+    elif command in ['P', 'Prompt']: ###P### ###Prompt###
+        cmd_toggle = cmd_list if cmd_toggle == '' else ''
+    else: ###what### ###default###
+        print "what? 'h' for help"
+        if ptr <= max_data:
+            print_data(ptr, '*' if ptrC() == ptr else ' ')
+
+    if max_data:
+        print "%s%sLine #%d:> " % (('(author: '+author + ') ' if author else ('(filter: '+filter + ') ' if filter else "")), cmd_toggle, ptr),
+    else:
+        print "%sNo Repo :> " % cmd_toggle,
+
+    try:
+        command = sys.stdin.readline()
+    except KeyboardInterrupt:
+        sys.exit(0)
+
+    if len(command) == 0:
+        sys.exit(0)
+    command = command.strip()
+    windowsize = terminal_size()[1]-1
+    print '\r',
+    sys.stdout.flush()
+
