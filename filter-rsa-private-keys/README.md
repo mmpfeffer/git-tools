@@ -1,11 +1,8 @@
 USAGE
 -----
 ```
-filter-rsa-private-keys  --munge MUNGE_PATTERN [<git-filter-branch-options>] <rev-list-options>
+filter-rsa-private-keys  [<git-filter-branch-options>] <rev-list-options>
 ```
-MUNGE_PATTERN - optional no-whitespace character sequence which does not appear in any files in the repo. May not
-                include a percent sign (%), which is reserved, and shell-expansion characters should be avoided.
-                The default is the four-character sequence: ^==^ .
 
 INTRO
 -----
@@ -47,8 +44,4 @@ keys in PPK format. It does not recognize other kinds of private data or key for
 - If you need to update a repo in a git server (such as GitHub), you will need to be able to forceably
 update the branch you are filtering, otherwise you won't be able to push the updated repo. Also, you may
 need to check with the server administrator to verify that garbage collection will be run on your repo to
-remove the unwanted history after you make push your changes.
-
-- The MUNGE_PATTERN will be shell-expanded if it has any unfortunately-special expansion characteristics in the shell
-  (e.g. if MUNGE_PATTERN is ~ or $, it will expand to something, which may very well match part of a file name), causing
-  potentially-unintended results.
+remove the unwanted history after you push your changes.
