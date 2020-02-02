@@ -1,0 +1,90 @@
+#!/bin/bash
+help() {
+    usage
+    echo
+    echo "Split out folders from a git repo into separate repos..."
+    echo "top-dir: the directory to split out"
+    echo "dest: the git working directory to place split out git repos"
+    echo
+    echo "Each source directory directly under <top-dir> is copied"
+    echo "over to repo directory of the same name under <dest> and"
+    echo  "a commit is made there."
+    echo
+    echo "The commit message includes the id and commit message of"
+    echo "the last commit made on the source directory."
+    echo
+    echo "Non-directories directly under the <top-dir> are ignored."
+    echo
+    echo "Symlinks are traversed and copied. There is (currently) no"
+    echo "option to just copy the symlink."
+    echo
+    echo "Split out destinaton repos must be non-bare so that files can be"
+    echo "removed and replaced there (i.e. in the working tree)."
+    echo
+    echo "NOTE: This tool creates the destination repo if it does not exist."
+    echo "      Also, destination directory must not be / or a direct child of / (e.g. /myrepos)."
+}
+
+usage() {
+    echo "$(basename $0) <top-dir> <dest>"
+}
+
+if [[ "$1" == "-h" ]]; then
+    help
+    exit 0
+fi
+
+if [[ $# -ne 2 ]]; then
+    usage; exit 2
+fi
+
+top=$1
+dest=$2
+
+# Safety: make sure the destination isn't directly in / (root)"
+if [[ ! "$dest" =~ / ]]; then
+    echo :::relative:::
+    if [[ $(pwd) == / ]]; then
+        dest=/$dest
+    else
+        dest=$(pwd)/$dest
+    fi
+fi
+if [[ -z "$dest" ||  "$(dirname $dest)" == "/" || "$(basename $dest)" == "/" ]]; then
+    echo "Destination invalid. Empty? Root (/)? or direct child of Root (e.g. /myrepos)"
+    exit 2
+fi
+
+for source in $top/*; do
+    if [[ -d $source ]]; then
+        echo
+        echo Processing $source
+        # Get the last commit on the source folder.
+        commit_info=$(cd $source && git log --oneline -1 .)
+
+        one_dest=$dest/$(basename $source)
+        (
+            shopt -s extglob
+            # If the destination repo does not exist, create it.
+            if [[ ! -d $one_dest/.git ]]; then
+                echo hi
+                rm -rf $one_dest && mkdir -p $one_dest && (cd $one_dest && git init)
+            else
+                # Clear the destination repo of any uncommitted changes.
+                git --git-dir=$one_dest/.git --work-tree=$one_dest reset --hard HEAD || true
+
+                #TBD: use working tree commands to make new tree elsewhere then make changes there
+                #shopt -s extglob
+                #rm -rf -- $one_dest/!(.git)
+                (cd ${one_dest} && rm -rf *)
+            fi
+
+            # Replace all the files with those from the source folder
+            rsync -az -LK -q --perms $source/ $one_dest/
+
+            # Commit the changes.
+            git --git-dir=$one_dest/.git --work-tree=$one_dest add -A
+            git --git-dir=$one_dest/.git --work-tree=$one_dest commit -m "$commit_info" || true # catch no-change
+        ) || exit 1
+    fi
+done
