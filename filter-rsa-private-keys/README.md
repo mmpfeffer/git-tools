@@ -11,19 +11,18 @@ INTRO
 ```filter-rsa-private-keys``` runs through a given range of commits, filter-branching them looking for RSA private keys
 and removing them, leaving behind only the header and footer text BEGIN RSA PRIVATE KEY/END RSA PRIVATE KEY.
 
-The tool only scans the commits/branches you tell it too. See ```git filter-branch``` documentation about
-```<rev-list-options>```
+The tool only scans the commits/branches you tell it too. See [git filter-branch](https://git-scm.com/docs/git-filter-branch) for documentation on ```<rev-list-options>```
 
-COMPLEXITY: High
-DANGER LEVEL: High
+- COMPLEXITY: High
+- DANGER LEVEL: High
 
 PREPARATION
 -----------
 Set working directory to the top-level directory of the git repo you want to filter.
 
-See ```man git-filter-branch``` for the possible options and use of <rev-list-options>.
+See [git filter-branch](https://git-scm.com/docs/git-filter-branch) for the possible options and use of ```<rev-list-options>```.
 This tool primarily depends on ```--tree-filter```.  If you don't know what that is, you
-should NOT be reading this or using this script.
+should not be reading this or using this script.
 
 BUGS
 ----
@@ -35,7 +34,7 @@ keys in PPK format. It does not recognize other kinds of private data or key for
 - Keys found in file names with white-space in the names cause the operation to fail.
 
 - Garbage collection on the git repo is not run. You have to take care of that yourself. See
-```git filter-branch``` documentation and ```git gc``` documentation for more information.
+[git filter-branch](https://git-scm.com/docs/git-filter-branch) documentation and [git gc](https://git-scm.com/docs/git-gc) documentation for more information.
 
 - If you need to update a repo in a git server (such as GitHub), you will need to be able to forcibly
 update the branch you are filtering, otherwise you won't be able to push the updated repo. Also, you may
