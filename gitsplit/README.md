@@ -8,7 +8,7 @@ top-dir: the directory to split out
 dest: the git working directory to place split out git repos
 ```
 
-# Description
+### Description
 
 Each source directory directly under `<top-dir>`is copied
 over to repo directory of the same name under `<dest>` and
