@@ -1,5 +1,8 @@
 ### Summary: Super-fast, flexible Git repo viewer.
 
+### Why
+Because big-long-hairy hex numbers are not Human.
+
 ### Synopsis
 ```
 gitgo [<dir>]
