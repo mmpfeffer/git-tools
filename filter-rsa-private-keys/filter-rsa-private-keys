@@ -12,8 +12,10 @@ fi
 
 git filter-branch -f --tree-filter '
     file_list=$(grep -l -R "BEGIN RSA PRIVATE KEY" * 2>/dev/null || true)
-    echo FILE LIST
-    echo $file_list | tr " " "\\n"
+    if [[ -n "$file_list" ]]; then
+        echo FILE LIST
+        echo $file_list | tr " " "\\n"
+    fi
     if [[ -n "$f" ]]; then echo; fi
     for f in $file_list; do
         # grab all the lines of the key itself, substituting sed-special characters / and +
