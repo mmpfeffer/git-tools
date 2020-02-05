@@ -33,6 +33,10 @@ keys in PPK format. It does not recognize other kinds of private data or key for
 
 - Keys found in file names with white-space in the names cause the operation to fail.
 
+- All the lines between the BEGIN and END are deleted, regardless of what is there.  If, for example, the key
+  is embedded in some form of quoting, that quoting is deleted as well. This messes up any scripts that had keys
+  in them.  Maybe this is a feature?
+
 - Garbage collection on the git repo is not run. You have to take care of that yourself. See
 [git filter-branch](https://git-scm.com/docs/git-filter-branch) documentation and [git gc](https://git-scm.com/docs/git-gc) documentation for more information.
 
