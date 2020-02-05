@@ -20,7 +20,7 @@ git filter-branch -f --tree-filter '
     for f in $file_list; do
         # grab all the lines of the key itself, substituting sed-special characters / and +
         sed -e "/-----BEGIN RSA PRIVATE KEY-----/,/-----END RSA PRIVATE KEY-----/p" -e "1,\$d" $f |
-            sed -e "/RSA PRIVATE KEY/d" -e "s:[^a-zA-Z0-9]:.:g" -e "s:^:/:" -e "s:$:/d:" >/tmp/key_delete$$.txt
+            sed -e "/RSA PRIVATE KEY/d" -e "s:[^a-zA-Z0-9]:.:g" | cut -c 1-1000 | sed -e "s:^:/:" -e "s:$:/d:" >/tmp/key_delete$$.txt
 
         if [[ -s /tmp/key_delete$$.txt ]]; then
             echo $f
