@@ -17,27 +17,29 @@ rm -rf /tmp/trouble_list$ORIGINAL_PID.txt
 git filter-branch -f --tree-filter '
     THE_PID='$ORIGINAL_PID'
     if [[ -f /tmp/trouble_list$THE_PID.txt ]]; then # after first commit - search only relevant files
-        (grep -l "BEGIN RSA PRIVATE KEY" $(</tmp/trouble_list$THE_PID.txt) $(git show --name-only --oneline $GIT_COMMIT | sed 1d) 2>/dev/null || true) > /tmp/trouble2_list$THE_PID.txt
+        (fgrep -l -- "-----BEGIN RSA PRIVATE KEY-----" $(</tmp/trouble_list$THE_PID.txt) $(git show --name-only --oneline $GIT_COMMIT | sed 1d) 2>/dev/null || true)|sort -u > /tmp/trouble2_list$THE_PID.txt
     else # first commit - full search
-        (grep -l --exclude-dir=.git -R "BEGIN RSA PRIVATE KEY" . 2>/dev/null || true) > /tmp/trouble2_list$THE_PID.txt
+        (fgrep -l --exclude-dir=.git -R -- "-----BEGIN RSA PRIVATE KEY-----" . 2>/dev/null || true) > /tmp/trouble2_list$THE_PID.txt
     fi
     mv /tmp/trouble2_list$THE_PID.txt /tmp/trouble_list$THE_PID.txt
     file_list=$(</tmp/trouble_list$THE_PID.txt)
     start_output=
     for f in $file_list; do
         # grab all the lines of the key itself, substituting special characters
-        sed -e "/-----BEGIN RSA PRIVATE KEY-----/,/-----END RSA PRIVATE KEY-----/p" -e "1,\$d" $f |
-            sed -e "/RSA PRIVATE KEY/d" -e "s:[^a-zA-Z0-9]:.:g" | cut -c 1-1000 | sed -e "s:^:/:" -e "s:$:/d:" >/tmp/key_delete$THE_PID.txt
 
-        if [[ -s /tmp/key_delete$THE_PID.txt ]]; then
-            if [[ -z "$start_output" ]]; then
-                start_output=no
-                echo
-            fi
-            echo $f
-            #cat /tmp/key_delete$THE_PID.txt
-            sed '"$SED_I_OPT"' -f /tmp/key_delete$THE_PID.txt $f
+        awk "
+            BEGIN { br=0 }
+            /-----BEGIN RSA PRIVATE KEY-----/ { br=1; print }
+            /-----END RSA PRIVATE KEY-----/   { br= 0 }
+            br==1 { next }
+            { print }
+            " $f >/tmp/key_delete$THE_PID.txt
+        mv /tmp/key_delete$THE_PID.txt $f
+        if [[ -z "$start_output" ]]; then
+            start_output=no
+            echo
         fi
+        echo $f
         rm -f /tmp/key_delete$THE_PID.txt
     done' $@
 
