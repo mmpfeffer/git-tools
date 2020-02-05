@@ -11,7 +11,7 @@ else
 fi
 
 git filter-branch -f --tree-filter '
-    file_list=$(grep -l -R "BEGIN RSA PRIVATE KEY" * 2>/dev/null || true)
+    file_list=$(grep -l --exclude-dir=.git -R "BEGIN RSA PRIVATE KEY" . 2>/dev/null || true)
     start_output=
     for f in $file_list; do
         # grab all the lines of the key itself, substituting sed-special characters / and +
