@@ -12,19 +12,19 @@ fi
 
 git filter-branch -f --tree-filter '
     file_list=$(grep -l -R "BEGIN RSA PRIVATE KEY" * 2>/dev/null || true)
-    if [[ -n "$file_list" ]]; then
-        echo FILE LIST
-        echo $file_list | tr " " "\\n"
-    fi
-    if [[ -n "$f" ]]; then echo; fi
+    start_output=
     for f in $file_list; do
         # grab all the lines of the key itself, substituting sed-special characters / and +
         sed -e "/-----BEGIN RSA PRIVATE KEY-----/,/-----END RSA PRIVATE KEY-----/p" -e "1,\$d" $f |
             sed -e "/RSA PRIVATE KEY/d" -e "s:[^a-zA-Z0-9]:.:g" | cut -c 1-1000 | sed -e "s:^:/:" -e "s:$:/d:" >/tmp/key_delete$$.txt
 
         if [[ -s /tmp/key_delete$$.txt ]]; then
+            if [[ -z "$start_output" ]]; then
+                start_output=no
+                echo
+            fi
             echo $f
-            cat /tmp/key_delete$$.txt
+            #cat /tmp/key_delete$$.txt
             sed '"$SED_I_OPT"' -f /tmp/key_delete$$.txt $f
         fi
         rm -f /tmp/key_delete$$.txt
