@@ -1,0 +1,40 @@
+#!/bin/bash
+# Script to remove old history from a git repo branch.
+# Defaults to 30 days on the master branch
+#
+# Input (option):
+#     first parameter: commit (ref) to remove: remove this ref and all which came before it...
+#     second parameter: the branch to rewrite...
+#
+# WARNING: This rewrites COMMIT HISTORY on your repo's branch. Do not use this unless you know what
+#          you are doing.
+#
+# WARNING: This doesn't do something normal! Don't use it unless you really know Git well...
+#
+# WARNING: This doesn't run garbage collection. Your repo probably won't shrink without some
+#          additonal garbage collection (e.g. See man git-gc and man git-filter-branch).
+#
+# NOTE: If there are other branches, their history will remain untouched.
+#       For this reason it may be best to use this on a repo that only has a single branch
+#       - unless you *really* know what you are doing.
+#
+# Process:
+#      Remove all commits prior to and including the selected (30 days ago) commit on the branch using commit rewrites.
+
+if [[ -z "$GIT_TRIM_ALLOWED" ]]; then
+    echo "DANGER ZONE: Do not use this script if you don't know what you are doing."
+    echo "It is highly destructive to your git repo."
+    exit 99
+fi
+
+ref="${1:-30 days ago}"
+branch="${2:-master}"
+new_root=$(git rev-list --until="${ref}" $branch | head -1)
+if [[ -n "$new_root" ]]; then
+    echo Trimming from $new_root and below...
+    export the_list=$(git rev-list ${new_root}..$branch)
+    git filter-branch -f --commit-filter '
+        [[ "$the_list" =~  $GIT_COMMIT ]] && git commit-tree "$@" || skip_commit "$@"' $branch
+else
+    echo "Nothing to trim."
+fi
