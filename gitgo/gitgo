@@ -7,7 +7,7 @@ import subprocess
 from   ansible.utils.color import stringc
 ###
 #                   dir/subdir (see '.' command). '+-[N]' moves through repo history in this session.
-cmd_list="[+|-][N] [j|k]; N<|>; [.|+|-][N] t|m|l|!<cmd>|s|i|%; n|b; [/|?] expr; w; z; u; c; r [dir] [opts]; f|a [expr]; P; H; S; T; . ; h(elp) -- "
+cmd_list="[+|-][N] [j|k]; N<|>; [.|+|-][N] t|m|l|!<cmd>|s|d|i|%; n|b; [/|?] expr; w; z; u; c; r [dir] [opts]; f|a [expr]; P; H; S; T; . ; h(elp) -- "
 def show_help():
     return """
 Gitgo Help
@@ -53,6 +53,9 @@ Windows
 Actions
 -------
 [./+/-]N s(how)     'git show' the commit on line N. N defaults to the current line.
+                    .N is commit id. +/-N: relative to current line [default: +/- 1].
+
+[./+/-]N d(iff)     'git diff' the commit on line N from the current line. N defaults to the current line.
                     .N is commit id. +/-N: relative to current line [default: +/- 1].
 
 [./+/-]N i(nspect)  Inspect full 'git log' for the commit on line N. N defaults to the current line.
@@ -414,6 +417,14 @@ def getId(ptr, default=None):
         except:
             id = default
         return id
+
+def gitDiff(ptr, from_id, diff_ptr, diff_id, opts=''):
+        if from_id and diff_id:
+            from_id = id[0]
+            diff_id = diff_id[0]
+            cmd='git diff %s --color %s %s %s' % (opts, from_id, diff_id, pathspec)
+            print(cmd)
+            os.system("(echo '#%s #%s %s: ';" % (ptr,diff_ptr,cmd) +  cmd + ")|less -XFr") # colored, paged output with heading
 
 def gitShow(ptr, id, opts=''):
         if id:
@@ -925,6 +936,38 @@ while True:
         new_ptr = find_commit(id)
         if new_ptr > 0:
             command = "%di" % new_ptr
+            continue
+        elif new_ptr == -1:
+            print "Not unique"
+        else:
+            print "Not found"
+
+    elif re.findall("^[ \t]*\-([0-9][0-9]*)?[ \t]*d(iff)?$", command): ###-d### ###-dif### ###-Nd### #######-Ndiff
+        diff_ptr = navPtr(ptr, command.replace('diff', '').replace('d', ''), direction=-1)
+        diff_id = getId(diff_ptr)
+        id = getId(ptr)
+        gitDiff(ptr, id, diff_ptr, diff_id)
+        print_data(ptr)
+    elif re.findall("^[ \t]*\+([0-9][0-9]*)?[ \t]*d(iff)?$", command): ###+d### ###+diff### ###+Nd### #######+Ndiff
+        diff_ptr = navPtr(ptr, command.replace('diff', '').replace('d', ''), direction=1)
+        diff_id = getId(diff_ptr)
+        id = getId(ptr)
+        gitDiff(ptr, id, diff_ptr, diff_id)
+    elif re.findall("^[ \t]*([1-9][0-9]*)?[ \t]*d(iff)?$", command): ###d### ###diff### ###Nd### #######Ndiff
+        if re.findall('^[1-9]', command.strip()):
+            diff_ptr = int(command.replace('diff', '').replace('d',''))
+        else:
+            diff_ptr = ptr
+        diff_ptr = diff_ptr if diff_ptr < max_data else max_data
+        diff_id = getId(diff_ptr)
+        id = getId(ptr)
+        gitDiff(ptr, id, diff_ptr, diff_id)
+        print_data(ptr)
+    elif re.findall("^[ \t]*\.[a-f0-9]{1,7}[ \t]+d(iff)?$", command): ###dotN d### ###dotN diff###
+        id =  re.sub('[ \t]d.*', '', command)[1:].strip()
+        new_ptr = find_commit(id)
+        if new_ptr > 0:
+            command = "%dd" % new_ptr
             continue
         elif new_ptr == -1:
             print "Not unique"
