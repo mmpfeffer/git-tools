@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+
 import os
 import re
 import sys
@@ -11,76 +12,79 @@ cmd_list="[+|-][N] [j|k]; N<|>; [.|+|-][N] t|m|l|!<cmd>|s|d|i|%; n|b; [/|?] expr
 def show_help():
     return """
 Gitgo Help
-Command             Description
---------------      ---------------------------------------------------------
+Command                   Description
+--------------            ---------------------------------------------------------
 
 Repo/View
 ---------
-.                   Status Report
-[./+/-N] c(heckout) Checkout specified commit.  With '.', N is a commit id or tree-ish. Use $ for end of list).
-r(epo) dir[/subdir] Move to a new git repo by directory. Subdir limits view to commits there.
-                    Options: see man page for git-log for options. Path is relative to current
-                    dir/subdir (see '.' command). dir/subdir '...' is short for top of current repo.
+.                         Status Report
+[./+/-N] c(heckout)       Checkout specified commit.  With '.', N is a commit id or tree-ish. Use $ for end of list).
+r(epo) dir[/subdir]       Move to a new git repo by directory. Subdir limits view to commits there.
+                          Options: see man page for git-log for options. Path is relative to current
+                          dir/subdir (see '.' command). dir/subdir '...' is short for top of current repo.
 
-u(pdate)            Fetch updates from origin
+u(pdate)                  Fetch updates from origin
 
 Display
 -------
-S(quash)            Toggle inclusion of branching graphics in the display.
-T(ags)              Toggle inclusion of tags in the display.
-P(rompt)            Toggle help text on prompt.
+S(quash)                  Toggle inclusion of branching graphics in the display.
+T(ags)                    Toggle inclusion of tags in the display.
+P(rompt)                  Toggle help text on prompt.
 
 Navigation
 ----------
-ENTER               Move forward one page (Default command).
-[.]N                Move to specified line. With '.', N is a commit id. Use $ for end of list).
-+/-N                Move forward/backward by N lines. N defaults to the page size.
-N j|k               Move forward/backward N lines. N defaults to one (1).
-N</>                Move forward ">" / backward "<" through viewing history. N defaults to 1.
-H(istory)           Show viewing history.
+ENTER                     Move forward one page (Default command).
+[.]N                      Move to specified line. With '.', N is a commit id. Use $ for end of list).
++/-N                      Move forward/backward by N lines. N defaults to the page size.
+N j|k                     Move forward/backward N lines. N defaults to one (1).
+N</>                      Move forward ">" / backward "<" through viewing history. N defaults to 1.
+H(istory)                 Show viewing history.
 
 Windows
 -------
-[./+/-]N t(op)      Place line N at page top    [default: N is current line].
-                    .N is commit id. +/-N: line to move is relative to the current [default: +/- 1].
+[./+/-]N t(op)            Place line N at page top    [default: N is current line].
+                          .N is commit id. +/-N: line to move is relative to the current [default: +/- 1].
 
-[./+/-]N m          Place line N at page middle [default: N is current line].
-                    .N is commit id. +/-N: line to move is relative to the current [default: +/- 1].
+[./+/-]N m                Place line N at page middle [default: N is current line].
+                          .N is commit id. +/-N: line to move is relative to the current [default: +/- 1].
 
-[./+/-]N l(ast)     Place line N at page bottom [default: N is current line].
-                    .N is commit id. +/-N: line to move is relative to the current [default: +/- 1].
+[./+/-]N l(ast)           Place line N at page bottom [default: N is current line].
+                          .N is commit id. +/-N: line to move is relative to the current [default: +/- 1].
 
 Actions
 -------
-[./+/-]N s(how)     'git show' the commit on line N. N defaults to the current line.
-                    .N is commit id. +/-N: relative to current line [default: +/- 1].
+[./+/-]N s(how)           'git show' the commit on line N. N defaults to the current line.
+                          .N is commit id. +/-N: relative to current line [default: +/- 1].
 
-[./+/-]N d(iff)     'git diff' the commit on line N from the current line. N defaults to the current line.
-                    .N is commit id. +/-N: relative to current line [default: +/- 1].
+[./+/-]N d(iff) [./+/-]M  'git diff' the commit on line N from line M. N and M default to the current line.
+                          .N (.M) is commit id. +/-N or +/-M are relative to current line [default: +/- 1].
 
-[./+/-]N i(nspect)  Inspect full 'git log' for the commit on line N. N defaults to the current line.
-                    .N is commit id. +/-N: relative to current line [default +/1 1].
+[./+/-]N i(nspect)        Inspect full 'git log' for the commit on line N. N defaults to the current line.
+                          .N is commit id. +/-N: relative to current line [default +/1 1].
 
-[./+/-]N %          'git show' list of files changes for the commit on line N. N defaults to the current line.
-                    .N is commit id. +/-N: relative to current line [default +/1 1].
+[./+/-]N %                'git show' list of files changes for the commit on line N. N defaults to the current line.
+                          .N is commit id. +/-N: relative to current line [default +/1 1].
 
-n(ext)|b(ack)       'git show' the next|previous line commit.
+n(ext)|b(ack)             'git show' the next|previous line commit.
 
-[./+/-]N !cmd       Issue shell command. $ID contains commit id [default: N is the current line].
-                    .N is commit id. +/-N: relative to current line [default: +/- 1]. #N replaced with
-                    short commit hash for line N. ## replaced with current line short commit hash.
-                    Current working directory is the directory under inspection (see 'repo' command).
+[./+/-]N !cmd             Issue shell command. $ID contains commit id [default: N is the current line].
+                          .N is commit id. +/-N: relative to current line [default: +/- 1]. #N replaced with
+                          short commit hash for line N. ## replaced with current line short commit hash.
+                          Current working directory is the directory under inspection (see 'repo' command).
 
 Filter/Search
 -------------
-/regex              Search for text in commit message. Omit regex to repeat.
-?regex              Search backward for text in commit message. Omit regex to repeat.
-f(ilter) [regex]    Set a regex filter on commit message. Leave empty to clear.
-a(uthor) [regex]    Set a regex filter for author. Leave empty to clear.
-w                   Refresh the page.
-z                   List commit authors. Honours a(uthor) and f(ilter) settings
-h(elp)              This help.
+/regex                    Search for text in commit message. Omit regex to repeat.
+?regex                    Search backward for text in commit message. Omit regex to repeat.
+f(ilter) [regex]          Set a regex filter on commit message. Leave empty to clear.
+a(uthor) [regex]          Set a regex filter for author. Leave empty to clear.
+w                         Refresh the page.
+z                         List commit authors. Honours a(uthor) and f(ilter) settings
+h(elp)                    This help.
 """.strip()
+
+def dprintf(d):
+  print(d)
 
 def get_repo_dir():
     try:
@@ -395,14 +399,14 @@ def do_search(ptr, command, direction):
         return ptr
 
 def navPtr(ptr, navCommand, direction):
-        if re.findall('[0-9]', command):
+        if re.findall('[0-9]', navCommand):
             delta = int(navCommand)
         else:
             delta = direction
         new_ptr = ptr
         count = 0
         match_ptr = ptr #keep original, unless matched.
-        while count < (-delta) and new_ptr+direction >= 1 and new_ptr+direction <= max_data:
+        while count < abs(delta) and new_ptr+direction >= 1 and new_ptr+direction <= max_data:
             new_ptr += direction
             if selected(new_ptr):
                 count += 1
@@ -942,44 +946,151 @@ while True:
         else:
             print "Not found"
 
-    elif re.findall("^[ \t]*\-([0-9][0-9]*)?[ \t]*d(iff)?$", command): ###-d### ###-dif### ###-Nd### #######-Ndiff
-        diff_ptr = navPtr(ptr, command.replace('diff', '').replace('d', ''), direction=-1)
-        diff_id = getId(diff_ptr)
-        id = getId(ptr)
-        gitDiff(ptr, id, diff_ptr, diff_id)
-        print_data(ptr)
-    elif re.findall("^[ \t]*\+([0-9][0-9]*)?[ \t]*d(iff)?$", command): ###+d### ###+diff### ###+Nd### #######+Ndiff
-        diff_ptr = navPtr(ptr, command.replace('diff', '').replace('d', ''), direction=1)
-        diff_id = getId(diff_ptr)
-        id = getId(ptr)
-        gitDiff(ptr, id, diff_ptr, diff_id)
-    elif re.findall("^[ \t]*([1-9][0-9]*)?[ \t]*d(iff)?$", command): ###d### ###diff### ###Nd### #######Ndiff
-        if re.findall('^[1-9]', command.strip()):
-            diff_ptr = int(command.replace('diff', '').replace('d',''))
+    elif re.findall("^[ \t]*\-([1-9][0-9]*)?[ \t]*d(iff)?.*$", command): ###-d### ###-diff### ###-Nd### #######-Ndiff
+        go = True
+        first_ref=command[0:command.find('d')].strip()
+        second_loc=command.find('diff')
+        if second_loc == -1:
+            second_loc=command.find('d')+1
         else:
-            diff_ptr = ptr
-        diff_ptr = diff_ptr if diff_ptr < max_data else max_data
-        diff_id = getId(diff_ptr)
-        id = getId(ptr)
-        gitDiff(ptr, id, diff_ptr, diff_id)
-        print_data(ptr)
-    elif re.findall("^[ \t]*\.[a-f0-9]{1,7}[ \t]+d(iff)?$", command): ###dotN d### ###dotN diff###
+            second_loc += 4
+
+        second_ref=command[second_loc:].strip()
+        if re.findall("^[ \t]*\-([1-9][0-9]*)?$", second_ref):  ##-## ##-N##
+            second_ptr = navPtr(ptr, second_ref, direction=-1)
+        elif re.findall("^[ \t]*\+([1-9][0-9]*)?$", second_ref): ##+## ##+N##
+            second_ptr = navPtr(ptr, second_ref, direction=+1)
+        elif re.findall("^[ \t]*([1-9][0-9]*)?$", second_ref): ##(empty)## ##N##
+            if re.findall('^[1-9]', second_ref):
+                second_ptr = int(second_ref)
+            else:
+                second_ptr = ptr
+        elif re.findall("^[ \t]*\.[a-f0-9]{1,7}$", second_ref): ##dotN##
+            go = False
+            second_id = re.sub('[ \t]*\.', '', second_ref)
+            second_ptr = find_commit(second_id)
+            if second_ptr > 0:
+                command = "%s d %d" % (first_ref, second_ptr)
+                continue
+            elif second_ptr == -1:
+                print "Diff commit not unique"
+            else:
+                print "Diff commit not found"
+
+        if go:
+            ptr = ptr_history_add(navPtr(ptr, first_ref, direction=-1))
+            second_id = getId(second_ptr)
+            id = getId(ptr)
+            gitDiff(ptr, id, second_ptr, second_id)
+            print_data(ptr)
+
+    elif re.findall("^[ \t]*\+([1-9][0-9]*)?[ \t]*d(iff)?.*$", command): ###+d### ###+diff### ###+Nd### #######+Ndiff
+        go = True
+        first_ref=command[0:command.find('d')].strip()
+
+        second_loc=command.find('diff')
+        if second_loc == -1:
+            second_loc=command.find('d')+1
+        else:
+            second_loc += 4
+
+        second_ref=command[second_loc:].strip()
+
+        if re.findall("^[ \t]*\-([1-9][0-9]*)?$", second_ref):  ##-## ##-N##
+            second_ptr = navPtr(ptr, second_ref, direction=-1)
+        elif re.findall("^[ \t]*\+([1-9][0-9]*)?$", second_ref): ##+## ##+N##
+            second_ptr = navPtr(ptr, second_ref, direction=+1)
+        elif re.findall("^[ \t]*([1-9][0-9]*)?$", second_ref): ##(empty)## ##N##
+            if re.findall('^[1-9]', second_ref):
+                second_ptr = int(second_ref)
+            else:
+                second_ptr = ptr
+        elif re.findall("^[ \t]*\.[a-f0-9]{1,7}$", second_ref): ##dotN##
+            go = False
+            second_id = re.sub('[ \t]*\.', '', second_ref)
+            second_ptr = find_commit(second_id)
+            if second_ptr > 0:
+                command = "%s d %d" % (first_ref, second_ptr)
+                continue
+            elif second_ptr == -1:
+                print "Diff commit not unique"
+            else:
+                print "Diff commit not found"
+
+        if go:
+            ptr = ptr_history_add(navPtr(ptr, first_ref, direction=1))
+            second_id = getId(second_ptr)
+            id = getId(ptr)
+            gitDiff(ptr, id, second_ptr, second_id)
+            print_data(ptr)
+
+    elif re.findall("^[ \t]*([1-9][0-9]*)?[ \t]*d(iff)?.*$", command): ###d### ###diff### ###Nd### #######Ndiff
+        go = True
+        first_ref=command[0:command.find('d')].strip()
+        if re.findall('^[1-9]', first_ref):
+            new_ptr = int(first_ref)
+        else:
+            new_ptr = ptr
+        new_ptr = new_ptr if new_ptr < max_data else max_data
+
+        second_loc=command.find('diff')
+        if second_loc == -1:
+            second_loc=command.find('d')+1
+        else:
+            second_loc += 4
+
+        second_ref=command[second_loc:].strip()
+        if re.findall("^[ \t]*\-([1-9][0-9]*)?$", second_ref):  ##-## ##-N##
+            second_ptr = navPtr(ptr, second_ref, direction=-1)
+        elif re.findall("^[ \t]*\+([1-9][0-9]*)?$", second_ref): ##+## ##+N##
+            second_ptr = navPtr(ptr, second_ref, direction=+1)
+        elif re.findall("^[ \t]*([1-9][0-9]*)?$", second_ref): ##(empty)## ##N##
+            if re.findall('^[1-9]', second_ref):
+                second_ptr = int(second_ref)
+            else:
+                second_ptr = ptr
+        elif re.findall("^[ \t]*\.[a-f0-9]{1,7}$", second_ref): ##dotN##
+            go = False
+            second_id = re.sub('[ \t]*\.', '', second_ref)
+            second_ptr = find_commit(second_id)
+            if second_ptr > 0:
+                command = "%s d %d" % (first_ref, second_ptr)
+                continue
+            elif second_ptr == -1:
+                print "Diff commit not unique"
+            else:
+                print "Diff commit not found"
+
+        if go:
+            ptr = ptr_history_add(new_ptr)
+            second_id = getId(second_ptr)
+            id = getId(ptr)
+            gitDiff(ptr, id, second_ptr, second_id)
+            print_data(ptr)
+
+    elif re.findall("^[ \t]*\.[a-f0-9]{1,7}[ \t]+d(iff)?.*$", command): ###dotN d### ###dotN diff###
         id =  re.sub('[ \t]d.*', '', command)[1:].strip()
         new_ptr = find_commit(id)
+        second_part = re.split('\.'+id, command, 1)[1].strip()
+        if second_part[0:4] == 'diff':
+           second_ref = second_part[4:].strip()
+        else:
+           second_ref = second_part[1:].strip()
+
         if new_ptr > 0:
-            command = "%dd" % new_ptr
+            command = "%d d %s" % (new_ptr, second_ref)
             continue
         elif new_ptr == -1:
             print "Not unique"
         else:
             print "Not found"
 
-    elif re.findall("^[ \t]*\-([0-9][0-9]*)?[ \t]*s(how)?$", command): ###-s### ###-show### ###-Ns### #######-Nshow
+    elif re.findall("^[ \t]*\-([1-9][0-9]*)?[ \t]*s(how)?$", command): ###-s### ###-show### ###-Ns### #######-Nshow
         ptr = ptr_history_add(navPtr(ptr, command.replace('show', '').replace('s', ''), direction=-1))
         id = getId(ptr)
         gitShow(ptr, id)
         print_data(ptr)
-    elif re.findall("^[ \t]*\+([0-9][0-9]*)?[ \t]*s(how)?$", command): ###+s### ###+show### ###+Ns### #######+Nshow
+    elif re.findall("^[ \t]*\+([1-9][0-9]*)?[ \t]*s(how)?$", command): ###+s### ###+show### ###+Ns### #######+Nshow
         ptr = ptr_history_add(navPtr(ptr, command.replace('show', '').replace('s', ''), direction=1))
         id = getId(ptr)
         gitShow(ptr, id)
