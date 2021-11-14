@@ -1,0 +1,227 @@
+#!/usr/bin/env python3
+import os
+import sys
+import json
+import boto3
+import shutil
+import fnmatch
+import hashlib
+import argparse
+
+LOCAL_RECORD_FILE='.commit_info'
+
+def dprint(text):
+    if args.debug:
+        print(text)
+
+def vprint(text):
+    if args.verbose:
+        print(text)
+
+def md5_file(fname):
+    hash_md5 = hashlib.md5()
+    with open(fname, "rb") as f:
+        for chunk in iter(lambda: f.read(2 ** 20), b""):
+            hash_md5.update(chunk)
+    return hash_md5.hexdigest()
+
+def md5(text):
+    hash_md5 = hashlib.md5()
+    hash_md5.update(str.encode(text))
+    return hash_md5.hexdigest()
+
+def md5SumDir(path):
+    md5_text=""
+    dprint("md5SumDir: " + path)
+    for root, dir, files in os.walk(path):
+        for filename in files:
+           if os.path.join(root, filename) == os.path.join(path, LOCAL_RECORD_FILE):
+               continue
+
+           dprint("md5 calc: " + os.path.join(root, filename))
+           md5_text +=  md5_file(os.path.join(root, filename))
+    dprint("md5SumDir text: " + md5_text)
+    return md5(md5_text)
+
+def clearDir(path):
+    for filename in os.listdir(path):
+        file_path = os.path.join(path, filename)
+        if os.path.isfile(file_path) or os.path.islink(file_path):
+            os.unlink(file_path)
+        elif os.path.isdir(file_path):
+            shutil.rmtree(file_path)
+
+def get_files(client, repositoryName, folderPath, dest_folder=None, indent=0):
+    if dest_folder:
+       if not os.path.isdir(dest_folder):
+           os.makedirs(dest_folder)
+
+       cwd = os.getcwd()
+       os.chdir(dest_folder)
+
+    vprint(" ".ljust(indent) + "Get_files: " + folderPath)
+    folder_info = client.get_folder(repositoryName=repositoryName, folderPath=folderPath)
+    dprint(json.dumps(folder_info, indent=4))
+
+    # Download files...
+    for f in folder_info["files"]:
+        vprint(" ".ljust(indent) + "Get file:   " + f["absolutePath"])
+        data = client.get_file(repositoryName=repositoryName, filePath=f["absolutePath"])
+        dprint(data)
+        contents = data["fileContent"]
+        with open(f["relativePath"], "w") as fp:
+            fp.write(contents.decode('ascii'))
+
+    # Download symlinks...
+    for l in folder_info["symbolicLinks"]:
+        vprint(" ".ljust(indent) + "Get link:   " + l["absolutePath"])
+        data = client.get_file(repositoryName=repositoryName, filePath=l["absolutePath"])
+        dprint(data)
+        contents = data["fileContent"]
+        os.symlink(l["relativePath"], contents.decode('ascii'))
+
+    # Download subfolders...
+    for d in folder_info["subFolders"]:
+        vprint(" ".ljust(indent) + "Get folder: " + d["absolutePath"])
+        get_files(client, repositoryName, folderPath + ('/' if folderPath != '/' else '') + d["relativePath"], d["relativePath"], indent+2)
+
+    if dest_folder:
+        os.chdir(cwd)
+
+    return 0
+
+
+def main():
+    global args
+    parser = argparse.ArgumentParser(
+        description="Code Commit Directory Tree Download"
+    )
+    parser.add_argument('--repository-name', '-n', help='Code Commit repository', required=True)
+    parser.add_argument('--download-destination-path', '-l', help="Download destination directory", required=True)
+    parser.add_argument('--region', '-r', help="AWS Region")
+    parser.add_argument('--profile', '-p', help="AWS Credential profile")
+    commit_ish = parser.add_mutually_exclusive_group()
+    commit_ish.add_argument('--branch', '-b', help=" Branch to download")
+    commit_ish.add_argument('--commit-id', '-c', help="Commit id to download")
+    parser.add_argument('--source-folder-path', '-s', default='/', help="Source directory from repository")
+    parser.add_argument('--merge', '-m', help="Leave existing files in destination directory before download", action="store_true")
+    parser.add_argument('--force', '-f', help="Download even if files have not changed", action="store_true")
+    parser.add_argument('--verbose', '-v', help="Verbose output", action="store_true")
+    parser.add_argument('--debug', '-d', help="Debug output", action="store_true")
+    args = parser.parse_args()
+
+    # Normalize (and check) the destination path...
+    download_destination_path = os.path.relpath(args.download_destination_path)
+    vprint("Download destination path: " + download_destination_path)
+    if download_destination_path == '.':
+        raise ValueError("Current working directory may not be used for download-destination-path")
+
+    if os.path.realpath(download_destination_path) == '/':   # Verify it's not the root of the file system...
+        raise ValueError("The root directory (/) may not be used for download-destination-path")
+
+    if args.debug:
+       args.verbose = True
+
+    # Prepare the use of boto3 using selected AWS config profile...
+    if args.profile:
+        session = boto3.session.Session(profile_name=args.profile)
+        prep_client = session.client
+    else:
+        prep_client = boto3.client
+
+    # Connect using the specified region, if any. Otherwise default to
+    # the region configured via the profile, if given, or environment
+    # variables, per normal AWS library usage...
+    if args.region:
+        client = prep_client('codecommit', region_name=args.region)
+    else:
+        client = prep_client('codecommit')
+
+    # Determine the commit id of the download...
+    if args.branch:
+        branch_info = client.get_branch(
+            repositoryName=args.repository_name,
+            branchName=args.branch
+        )
+        commitId = branch_info["commitId"]
+
+    elif args.commit_id:
+        commitId = args.commit_id
+        # Sanity - make sure the commit exists...
+        commit_info = client.get_commit(
+            repositoryName=args.repository_name,
+            commitId=commitId
+        )
+
+    else: # Default branch
+        repository_info = client.get_repository(repositoryName=args.repository_name)
+        branch = repository_info["repositoryMetadata"]["defaultBranch"]
+        branch_info = client.get_branch(
+            repositoryName=args.repository_name,
+            branchName=branch
+        )
+        dprint(branch_info)
+        commitId = branch_info["branch"]["commitId"]
+
+    # Start the new download record (to be later saved in the downnload-destination-directory...
+    newRecord = { 'commitId' : commitId, 'sourceFolderPath' : args.source_folder_path }
+
+    perform_download = True # Initially it is presumed that download will take place...
+
+    # Determine if download is needed...
+    if not args.force:
+        # Check if download can be skipped...
+
+        # If there is a record file...
+        if os.path.exists(os.path.join(download_destination_path, LOCAL_RECORD_FILE)):
+            with open(os.path.join(download_destination_path, LOCAL_RECORD_FILE), 'r') as fp:
+                previousRecord = json.load(fp)
+
+            previousMerge = ('merged' in previousRecord['flags']) if 'flags' in previousRecord else False
+
+            # If now merging OR if last time there was no merge we could possibly skip the download...
+            if args.merge or (not previousMerge):
+                dprint("Merge parameters indicates the possibility of skipping download...")
+                # If the basic record fields match, check md5 sum of directory for any change...
+                if all(previousRecord.get(key) == newRecord.get(key) for key in newRecord):
+                    checkMd5Sum = md5SumDir(download_destination_path)
+                    dprint("check md5Sum: " + checkMd5Sum)
+                    dprint("prev  md5Sum: " + previousRecord['md5Sum'])
+
+                    # Skip the download if the md5 sum of the files on disk matches the record, indicating that no local changes have been made...
+                    if previousRecord['md5Sum'] == checkMd5Sum:
+                        newRecord['md5Sum'] = checkMd5Sum
+                        perform_download = False
+
+    if perform_download:
+        if not args.merge:
+            # For non-merge, clean the destination directory before downloading...
+            if os.path.exists(download_destination_path):  # If the path exists..
+                clearDir(download_destination_path)
+
+        # Download the files...
+        get_files(client, args.repository_name, args.source_folder_path, download_destination_path)
+
+        # Record the total md5sum for the new collection of files...
+        newRecord['md5Sum'] = md5SumDir(download_destination_path)
+        dprint("new   md5Sum: " + newRecord['md5Sum'])
+
+    # Add the repository name...
+    newRecord['repositoryName'] = args.repository_name
+
+    # Add the merge flag for merges...
+    if args.merge:
+        newRecord['flags'] = ['merged']
+
+    # Record the download record...
+    with open(os.path.join(download_destination_path, LOCAL_RECORD_FILE), "w") as fp:
+        json.dump(newRecord, fp, indent = 4)
+        fp.write('\n')
+
+    # Display the download record...
+    print(json.dumps(newRecord, indent=4))
+    return(0)
+
+if __name__ == '__main__':
+    retcode = main()
+    sys.exit(retcode)
