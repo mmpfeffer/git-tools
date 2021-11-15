@@ -76,17 +76,17 @@ This tool requires Python3 with the following non-standard python libraries:
 
 # Examples
 
-Example 1: Download the contents of the `/tenants/brooklyn-boot` folder from the CodeCommit repository `customisation`
-in the Ireland region (`eu-west-1`) into the local `/opt/customisation` folder, _clearing_ all contents previously found in
+Example 1: Download the contents of the `/joe` folder from the CodeCommit repository `customisation`
+in the Ireland region (`eu-west-1`) into the local `/opt/myfiles` folder, _clearing_ all contents previously found in
 that local folder:
 
-`rsync_codecommit --repository-name customisation --source-folder-path tenants/brooklyn-boot --region eu-west-1 -l /opt/customisation`
+`rsync_codecommit --repository-name customisation --source-folder-path joe --region eu-west-1 -l /opt/myfiles`
 
-Example 2: Download and merge the contents of the `/tenants/brooklyn-boot` folder from the `staging` branch of the
-CodeCommit repository `customisation` in the Ireland region (`eu-west-1`) into the local `/opt/customisation` folder,
+Example 2: Download and merge the contents of the `/joe` folder from the `staging` branch of the
+CodeCommit repository `customisation` in the Ireland region (`eu-west-1`) into the local `/opt/myfiles` folder,
 _preserving_ all contents previously found in that local folder:
 
-`rsync_codecommit --repository-name customisation --source-folder-path tenants/brooklyn-boot --region eu-west-1 -b staging -l /opt/customisation --merge`
+`rsync_codecommit --repository-name customisation --source-folder-path joe --region eu-west-1 -b staging -l /opt/myfiles --merge`
 
 
 
