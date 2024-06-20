@@ -5,9 +5,9 @@ Because big-long-hairy hex numbers are not Human.
 
 ### Synopsis
 ```
-gitgo [<dir>]
+gitgo [<filespec>]
 
-dir: the directory to view commits on
+filespec: the directory or file to view commits on
 ```
 
 ### Description
